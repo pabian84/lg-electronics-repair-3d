@@ -667,6 +667,8 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
     console.log('parseCompleteCommand>> ', input);
 
     // Damper service command detection
+    // Open the refrigerator door to service the left damper.
+    // Open the refrigerator door to service the right damper.
     if (isDamperCommand(input)) {
       return getDamperAnimationCommands(input);
     }
