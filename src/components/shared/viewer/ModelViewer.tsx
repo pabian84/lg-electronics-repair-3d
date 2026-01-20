@@ -140,7 +140,8 @@ function ModelContent({
     onLoaded?.();
   }, [clonedScene, onSceneReady, onLoaded]);
 
-  return <primitive object={clonedScene} onClick={removeClickedNode} />;
+  return <primitive object={clonedScene} />;
+  // return <primitive object={clonedScene} onClick={removeClickedNode} />;
 }
 
 function CameraManager({

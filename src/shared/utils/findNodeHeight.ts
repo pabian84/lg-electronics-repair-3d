@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { invalidate } from '@react-three/fiber';
 import { getPreciseBoundingBox, debugFocusCamera, createHighlightMaterial } from './commonUtils';
 
-const HighlightNode = '4J03020A_Damper,Pipe';
+const HighlightNode = 'ACV74674704_Damper_Assembly_10813';
 
 const highlightMaterial = createHighlightMaterial(0xff0000, 0.8);
 

@@ -534,9 +534,9 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
   // Handle door-related commands
   private async handleDoorCommand(input: string): Promise<LLMResponse> {
     // Check for complete commands (all parameters provided)
-    const completeCommand = this.parseCompleteCommand(input);
-    if (completeCommand) {
-      return await this.executeAnimationCommand(completeCommand);
+    const completeCommands = this.parseCompleteCommand(input);
+    if (completeCommands.length > 0) {
+      return await this.executeAnimationCommands(completeCommands);
     }
 
     // Handle confirmation responses (yes, no, correct, etc.)
@@ -661,10 +661,30 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
   }
 
   // Parse complete commands (all parameters in one input)
-  private parseCompleteCommand(input: string): AnimationCommand | null {
+  private parseCompleteCommand(input: string): AnimationCommand[] {
     console.log('parseCompleteCommand>> ', input);
+
+    // 특정 키워드(예: damper) 감지 후 사전 정의된 명령 시퀀스 반환
+    if (input.includes('damper')) {
+      console.log('Detected damper service command');
+      return [
+        {
+          door: DoorType.TOP_LEFT,
+          action: AnimationAction.OPEN,
+          degrees: 45,
+          speed: 3
+        },
+        {
+          door: DoorType.BOTTOM_LEFT,
+          action: AnimationAction.OPEN,
+          degrees: 180,
+          speed: 3
+        }
+      ];
+    }
+
     const doorType = this.identifyDoor(input);
-    if (!doorType) return null;
+    if (!doorType) return [];
 
     const degrees = this.extractDegrees(input);
     const speed = this.extractSpeed(input);
@@ -673,15 +693,15 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
     console.log('degrees>> ', degrees, 'speed>> ', speed, 'isOpen>> ', isOpen, 'isClose>> ', isClose, 'doorType>> ', doorType, 'input>> ', input, '');
 
     if (doorType && (isOpen || isClose) && degrees !== null && speed !== null) {
-      return {
+      return [{
         door: doorType,
         action: isOpen ? AnimationAction.OPEN : AnimationAction.CLOSE,
         degrees: isOpen ? degrees : 0,
         speed: speed
-      };
+      }];
     }
 
-    return null;
+    return [];
   }
 
   // Identify door type from natural language
@@ -760,8 +780,8 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
     return null;
   }
 
-  // Execute animation command
-  private async executeAnimationCommand(command: AnimationCommand): Promise<LLMResponse> {
+  // Execute multiple animation commands sequentially
+  private async executeAnimationCommands(commands: AnimationCommand[]): Promise<LLMResponse> {
     if (!this.doorControls) {
       return {
         type: 'error',
@@ -770,43 +790,61 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
     }
 
     try {
-      const degrees = command.degrees || 90;
-      const speed = command.speed || 1;
+      // Execute commands sequentially
+      for (const command of commands) {
+        const degrees = command.degrees || 90;
+        const speed = command.speed || 1;
 
-      if (command.action === AnimationAction.OPEN) {
-        if (command.door === DoorType.TOP_LEFT) {
-          this.doorControls.openByDegrees(degrees, speed);
-        } else if (command.door === DoorType.TOP_RIGHT) {
-          this.doorControls.openRightByDegrees(degrees, speed);
-        } else if (command.door === DoorType.BOTTOM_LEFT) {
-          this.doorControls.openLowerLeftByDegrees(degrees, speed);
-        } else if (command.door === DoorType.BOTTOM_RIGHT) {
-          this.doorControls.openLowerRightByDegrees(degrees, speed);
+        if (command.action === AnimationAction.OPEN) {
+          if (command.door === DoorType.TOP_LEFT) {
+            this.doorControls.openByDegrees(degrees, speed);
+          } else if (command.door === DoorType.TOP_RIGHT) {
+            this.doorControls.openRightByDegrees(degrees, speed);
+          } else if (command.door === DoorType.BOTTOM_LEFT) {
+            this.doorControls.openLowerLeftByDegrees(degrees, speed);
+          } else if (command.door === DoorType.BOTTOM_RIGHT) {
+            this.doorControls.openLowerRightByDegrees(degrees, speed);
+          }
+        } else if (command.action === AnimationAction.CLOSE) {
+          if (command.door === DoorType.TOP_LEFT) {
+            this.doorControls.close(speed);
+          } else if (command.door === DoorType.TOP_RIGHT) {
+            this.doorControls.closeRight(speed);
+          } else if (command.door === DoorType.BOTTOM_LEFT) {
+            this.doorControls.closeLowerLeft(speed);
+          } else if (command.door === DoorType.BOTTOM_RIGHT) {
+            this.doorControls.closeLowerRight(speed);
+          }
         }
-      } else if (command.action === AnimationAction.CLOSE) {
-        if (command.door === DoorType.TOP_LEFT) {
-          this.doorControls.close(speed);
-        } else if (command.door === DoorType.TOP_RIGHT) {
-          this.doorControls.closeRight(speed);
-        } else if (command.door === DoorType.BOTTOM_LEFT) {
-          this.doorControls.closeLowerLeft(speed);
-        } else if (command.door === DoorType.BOTTOM_RIGHT) {
-          this.doorControls.closeLowerRight(speed);
-        }
+
+        // Wait for the current animation to complete before next command
+        await new Promise(resolve => setTimeout(resolve, speed * 1000));
       }
+
+      // Generate combined message for all commands
+      const commandDescriptions = commands.map(command => {
+        const degrees = command.degrees || 90;
+        const speed = command.speed || 1;
+        return `${command.action} ${this.getDoorDisplayName(command.door)} door${command.action === AnimationAction.OPEN ? ` to ${degrees} degrees` : ''} at ${speed} second speed`;
+      });
 
       return {
         type: 'action',
-        message: `Executing: ${command.action} ${this.getDoorDisplayName(command.door)} door${command.action === AnimationAction.OPEN ? ` to ${degrees} degrees` : ''} at ${speed} second speed.`,
-        command: command
+        message: `Executing sequence: ${commandDescriptions.join(' → ')}`,
+        command: commands[0] // Return first command as representative
       };
     } catch (error) {
-      console.error('Error executing animation command:', error);
+      console.error('Error executing animation commands:', error);
       return {
         type: 'error',
-        message: `Failed to execute the animation command: ${error instanceof Error ? error.message : 'Unknown error'}`
+        message: `Failed to execute the animation sequence: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }
+  }
+
+  // Execute single animation command (for backward compatibility)
+  private async executeAnimationCommand(command: AnimationCommand): Promise<LLMResponse> {
+    return await this.executeAnimationCommands([command]);
   }
 
   // Get door function name for door controls (unused for now)
