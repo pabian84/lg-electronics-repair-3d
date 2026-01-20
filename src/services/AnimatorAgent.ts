@@ -27,7 +27,7 @@ class OllamaClient {
           stream: false
         })
       });
-      
+
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const result = await response.json();
       return { message: { content: result.message.content } };
@@ -60,7 +60,7 @@ export const DOOR_MAPPING = {
   'main refrigerator left': DoorType.TOP_LEFT,
   'top left refrigerator': DoorType.TOP_LEFT,
   'left refrigerator': DoorType.TOP_LEFT,
-  
+
   'top right': DoorType.TOP_RIGHT,
   'top right door': DoorType.TOP_RIGHT,
   'right door': DoorType.TOP_RIGHT,
@@ -71,7 +71,7 @@ export const DOOR_MAPPING = {
   'main refrigerator right': DoorType.TOP_RIGHT,
   'top right refrigerator': DoorType.TOP_RIGHT,
   'right refrigerator': DoorType.TOP_RIGHT,
-  
+
   // Bottom doors (freezer)
   'bottom left': DoorType.BOTTOM_LEFT,
   'bottom left door': DoorType.BOTTOM_LEFT,
@@ -81,7 +81,7 @@ export const DOOR_MAPPING = {
   'bottom freezer left': DoorType.BOTTOM_LEFT,
   'lower freezer left': DoorType.BOTTOM_LEFT,
   'left freezer': DoorType.BOTTOM_LEFT,
-  
+
   'bottom right': DoorType.BOTTOM_RIGHT,
   'bottom right door': DoorType.BOTTOM_RIGHT,
   'freezer right': DoorType.BOTTOM_RIGHT,
@@ -140,10 +140,10 @@ export class AnimatorAgent {
     message: string;
     lastChecked?: Date;
   } = {
-    isRunning: false,
-    status: 'offline',
-    message: 'Service status not checked yet.'
-  };
+      isRunning: false,
+      status: 'offline',
+      message: 'Service status not checked yet.'
+    };
   private availableModels: string[] = [];
 
   constructor() {
@@ -171,14 +171,14 @@ export class AnimatorAgent {
     try {
       this.serviceStatus.status = 'checking';
       this.serviceStatus.message = 'Checking Ollama service...';
-      
+
       const isAvailable = await this.isOllamaAvailable();
-      
+
       if (isAvailable) {
         this.serviceStatus.isRunning = true;
         this.serviceStatus.status = 'online';
         this.serviceStatus.message = 'Ollama service is running and accessible.';
-        
+
         // Get available models
         try {
           const models = await this.ollama.list();
@@ -193,7 +193,7 @@ export class AnimatorAgent {
         this.serviceStatus.message = 'Ollama service is not accessible. Please ensure Ollama is running on localhost:11434';
         this.availableModels = [];
       }
-      
+
       this.serviceStatus.lastChecked = new Date();
     } catch (error) {
       console.error('Error checking service status:', error);
@@ -227,10 +227,10 @@ export class AnimatorAgent {
       }
 
       console.log('Processing with LLM:', input);
-      
+
       // Create context-aware prompt
       const prompt = this.createLLMPrompt(input);
-      
+
       // Get LLM response
       const response = await this.ollama.chat({
         model: 'phi3', // Using phi3 model for better performance
@@ -241,10 +241,10 @@ export class AnimatorAgent {
       });
 
       console.log('LLM Response:', response.message.content);
-      
+
       // Parse LLM response
       return await this.parseLLMResponse(input, response.message.content);
-      
+
     } catch (error) {
       console.error('Error processing with LLM:', error);
       return null; // Fall back to rule-based system
@@ -253,13 +253,13 @@ export class AnimatorAgent {
 
   // Create context-aware prompt for LLM
   private createLLMPrompt(input: string): string {
-    const context = this.conversationState.currentDoor 
+    const context = this.conversationState.currentDoor
       ? `Current context: User is controlling the ${this.getDoorDisplayName(this.conversationState.currentDoor)} door. `
       : '';
-    
-    const awaiting = this.conversationState.awaitingDegrees 
+
+    const awaiting = this.conversationState.awaitingDegrees
       ? 'User needs to specify degrees (1-180). '
-      : this.conversationState.awaitingSpeed 
+      : this.conversationState.awaitingSpeed
         ? 'User needs to specify speed (in seconds or words like fast/slow). '
         : '';
 
@@ -323,7 +323,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
         // Apply defaults if not specified
         const degrees = parsed.degrees || 90; // Default to 90 degrees
         let speed = parsed.speed || 1; // Default to 1 second
-        
+
         // Convert descriptive speed to numeric if needed
         if (typeof speed === 'string') {
           const convertedSpeed = this.extractSpeed(speed);
@@ -331,7 +331,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
             speed = convertedSpeed;
           }
         }
-        
+
         const doorType = this.parseDoorType(parsed.door);
         if (doorType) {
           this.resetConversation();
@@ -376,7 +376,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
 
       // If we can't parse the action, use fallback
       return await this.fallbackLLMParsing(originalInput, llmResponse);
-      
+
     } catch (error) {
       console.error('Error parsing LLM response:', error);
       return this.fallbackLLMParsing(originalInput, llmResponse);
@@ -387,7 +387,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
   private async fallbackLLMParsing(originalInput: string, llmResponse: string): Promise<LLMResponse> {
     // Extract door information from LLM response
     const doorType = this.identifyDoor(llmResponse) || this.identifyDoor(originalInput);
-    
+
     if (doorType && !this.conversationState.currentDoor) {
       this.conversationState.currentDoor = doorType;
       this.conversationState.awaitingDegrees = true;
@@ -429,28 +429,28 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
       if (speed !== null) {
         this.conversationState.currentSpeed = speed;
         this.conversationState.awaitingSpeed = false;
-        
+
         const command: AnimationCommand = {
           door: this.conversationState.currentDoor,
           action: AnimationAction.OPEN,
           degrees: this.conversationState.currentDegrees,
           speed: this.conversationState.currentSpeed
         };
-        
+
         this.resetConversation();
         return this.executeAnimationCommand(command);
       } else {
         // Apply default speed if none specified
         this.conversationState.currentSpeed = 1;
         this.conversationState.awaitingSpeed = false;
-        
+
         const command: AnimationCommand = {
           door: this.conversationState.currentDoor,
           action: AnimationAction.OPEN,
           degrees: this.conversationState.currentDegrees,
           speed: this.conversationState.currentSpeed
         };
-        
+
         this.resetConversation();
         return this.executeAnimationCommand(command);
       }
@@ -472,7 +472,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
       'bottom_left': DoorType.BOTTOM_LEFT,
       'bottom_right': DoorType.BOTTOM_RIGHT
     };
-    
+
     return doorMap[doorString] || null;
   }
 
@@ -485,24 +485,24 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
   async processUserInput(userInput: string): Promise<LLMResponse> {
     try {
       const input = userInput.toLowerCase().trim();
-      
+
       // Debug logging
       console.log('Processing input:', input);
       console.log('Current conversation state:', this.conversationState);
-      
+
       // Try LLM first, fall back to rule-based if not available
       const llmResponse = await this.processWithLLM(input);
       if (llmResponse) {
         return llmResponse;
       }
-      
+
       // Fall back to rule-based system
       console.log('LLM not available, using rule-based system');
       if (this.isDoorCommand(input)) {
         console.log('Input recognized as door command');
         return await this.handleDoorCommand(input);
       }
-      
+
       console.log('Input not recognized as door command');
       return {
         type: 'error',
@@ -520,12 +520,12 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
   // Check if input is a door-related command
   private isDoorCommand(input: string): boolean {
     // If we're in an active conversation, accept any input
-    if (this.conversationState.currentDoor || 
-        this.conversationState.awaitingDegrees || 
-        this.conversationState.awaitingSpeed) {
+    if (this.conversationState.currentDoor ||
+      this.conversationState.awaitingDegrees ||
+      this.conversationState.awaitingSpeed) {
       return true;
     }
-    
+
     // Otherwise, check for door-related keywords
     const doorKeywords = ['door', 'open', 'close', 'degree', 'speed', 'left', 'right', 'top', 'bottom', 'freezer', 'refrigerator'];
     return doorKeywords.some(keyword => input.toLowerCase().includes(keyword));
@@ -561,6 +561,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
 
     // Check for door specification
     const doorType = this.identifyDoor(input);
+    console.log('doorType000>> ', doorType);
     if (doorType && !this.conversationState.currentDoor) {
       this.conversationState.currentDoor = doorType;
       this.conversationState.awaitingDegrees = true;
@@ -589,7 +590,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
     if (speed !== null && this.conversationState.currentDoor && this.conversationState.awaitingSpeed) {
       this.conversationState.currentSpeed = speed;
       this.conversationState.awaitingSpeed = false;
-      
+
       // Execute the complete command
       const command: AnimationCommand = {
         door: this.conversationState.currentDoor,
@@ -597,37 +598,37 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
         degrees: this.conversationState.currentDegrees,
         speed: this.conversationState.currentSpeed
       };
-      
+
       this.resetConversation();
       return await this.executeAnimationCommand(command);
     }
 
-      // Handle open/close commands with context
-  if (input.includes('open') || input.includes('close')) {
-    // Check for "close all doors" command
-    if (input.includes('close') && (input.includes('all') || input.includes('every') || input.includes('both'))) {
-      return await this.closeAllDoors();
-    }
-    
-    if (!this.conversationState.currentDoor) {
-      return {
-        type: 'question',
-        message: "Which door would you like to open/close? Please specify: Top Left, Top Right, Bottom Left, or Bottom Right.",
-        awaitingInput: true
+    // Handle open/close commands with context
+    if (input.includes('open') || input.includes('close')) {
+      // Check for "close all doors" command
+      if (input.includes('close') && (input.includes('all') || input.includes('every') || input.includes('both'))) {
+        return await this.closeAllDoors();
+      }
+
+      if (!this.conversationState.currentDoor) {
+        return {
+          type: 'question',
+          message: "Which door would you like to open/close? Please specify: Top Left, Top Right, Bottom Left, or Bottom Right.",
+          awaitingInput: true
+        };
+      }
+
+      const action = input.includes('open') ? AnimationAction.OPEN : AnimationAction.CLOSE;
+      const command: AnimationCommand = {
+        door: this.conversationState.currentDoor,
+        action: action,
+        degrees: action === AnimationAction.OPEN ? (this.conversationState.currentDegrees || 90) : 0,
+        speed: this.conversationState.currentSpeed || 1
       };
+
+      this.resetConversation();
+      return await this.executeAnimationCommand(command);
     }
-    
-    const action = input.includes('open') ? AnimationAction.OPEN : AnimationAction.CLOSE;
-    const command: AnimationCommand = {
-      door: this.conversationState.currentDoor,
-      action: action,
-      degrees: action === AnimationAction.OPEN ? (this.conversationState.currentDegrees || 90) : 0,
-      speed: this.conversationState.currentSpeed || 1
-    };
-    
-    this.resetConversation();
-    return await this.executeAnimationCommand(command);
-  }
 
     // If we have a door but need more information
     if (this.conversationState.currentDoor && this.conversationState.awaitingDegrees) {
@@ -643,7 +644,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
         type: 'question',
         message: `What speed should the animation be? (Enter time in seconds, e.g., 1 second, 2 seconds, fast, slow)`,
         awaitingInput: true
-        };
+      };
     }
 
     // Handle partial door identification
@@ -661,6 +662,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
 
   // Parse complete commands (all parameters in one input)
   private parseCompleteCommand(input: string): AnimationCommand | null {
+    console.log('parseCompleteCommand>> ', input);
     const doorType = this.identifyDoor(input);
     if (!doorType) return null;
 
@@ -668,6 +670,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
     const speed = this.extractSpeed(input);
     const isOpen = input.includes('open');
     const isClose = input.includes('close');
+    console.log('degrees>> ', degrees, 'speed>> ', speed, 'isOpen>> ', isOpen, 'isClose>> ', isClose, 'doorType>> ', doorType, 'input>> ', input, '');
 
     if (doorType && (isOpen || isClose) && degrees !== null && speed !== null) {
       return {
@@ -684,7 +687,11 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
   // Identify door type from natural language
   private identifyDoor(input: string): DoorType | null {
     console.log('Identifying door from input:', input);
-    for (const [key, value] of Object.entries(DOOR_MAPPING)) {
+
+    // Sort keys by length in descending order to prioritize more specific matches
+    const sortedEntries = Object.entries(DOOR_MAPPING).sort((a, b) => b[0].length - a[0].length);
+
+    for (const [key, value] of sortedEntries) {
       if (input.includes(key)) {
         console.log('Found door match:', key, '->', value);
         return value;
@@ -702,7 +709,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
       const degrees = parseInt(degreeMatch[1]);
       return Math.min(Math.max(degrees, 1), 180); // Clamp between 1 and 180
     }
-    
+
     // Check for simple numbers (common case)
     const numberMatch = input.match(/(\d+)/);
     if (numberMatch) {
@@ -711,7 +718,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
         return degrees;
       }
     }
-    
+
     // Check for common degree values
     if (input.includes('90') || input.includes('ninety') || input.includes('90°')) return 90;
     if (input.includes('45') || input.includes('forty-five') || input.includes('45°')) return 45;
@@ -719,13 +726,13 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
     if (input.includes('30') || input.includes('thirty') || input.includes('30°')) return 30;
     if (input.includes('60') || input.includes('sixty') || input.includes('60°')) return 60;
     if (input.includes('120') || input.includes('one twenty') || input.includes('120°')) return 120;
-    
+
     // Common door positions
     if (input.includes('half') || input.includes('halfway') || input.includes('mid')) return 90;
     if (input.includes('quarter') || input.includes('quarter way')) return 45;
     if (input.includes('fully') || input.includes('completely') || input.includes('all the way')) return 180;
     if (input.includes('slightly') || input.includes('little bit') || input.includes('small')) return 30;
-    
+
     return null;
   }
 
@@ -736,20 +743,20 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
       const speed = parseFloat(speedMatch[1]);
       return Math.min(Math.max(speed, 0.1), 10); // Clamp between 0.1 and 10 seconds
     }
-    
+
     // Check for common speed values
     if (input.includes('1 second') || input.includes('one second') || input.includes('1 sec')) return 1;
     if (input.includes('2 seconds') || input.includes('two seconds') || input.includes('2 secs')) return 2;
     if (input.includes('3 seconds') || input.includes('three seconds') || input.includes('3 secs')) return 3;
     if (input.includes('0.5 seconds') || input.includes('half second') || input.includes('0.5 sec')) return 0.5;
-    
+
     // Speed adjectives
     if (input.includes('fast') || input.includes('quick') || input.includes('rapid') || input.includes('speed')) return 0.5;
     if (input.includes('slow') || input.includes('gentle') || input.includes('gradual')) return 3;
     if (input.includes('medium') || input.includes('normal') || input.includes('standard')) return 1.5;
     if (input.includes('very fast') || input.includes('instant') || input.includes('immediate')) return 0.2;
     if (input.includes('very slow') || input.includes('very gentle')) return 5;
-    
+
     return null;
   }
 
@@ -765,7 +772,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
     try {
       const degrees = command.degrees || 90;
       const speed = command.speed || 1;
-      
+
       if (command.action === AnimationAction.OPEN) {
         if (command.door === DoorType.TOP_LEFT) {
           this.doorControls.openByDegrees(degrees, speed);
@@ -864,7 +871,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
         awaitingInput: true
       };
     }
-    
+
     if (this.conversationState.awaitingSpeed) {
       return {
         type: 'question',
@@ -1022,7 +1029,7 @@ What would you like to do next?`,
         awaitingInput: true
       };
     }
-    
+
     if (input.includes('right') && input.includes('top')) {
       this.conversationState.currentDoor = DoorType.TOP_RIGHT;
       this.conversationState.awaitingDegrees = true;
@@ -1032,7 +1039,7 @@ What would you like to do next?`,
         awaitingInput: true
       };
     }
-    
+
     if (input.includes('left') && (input.includes('bottom') || input.includes('freezer'))) {
       this.conversationState.currentDoor = DoorType.BOTTOM_LEFT;
       this.conversationState.awaitingDegrees = true;
@@ -1042,7 +1049,7 @@ What would you like to do next?`,
         awaitingInput: true
       };
     }
-    
+
     if (input.includes('right') && (input.includes('bottom') || input.includes('freezer'))) {
       this.conversationState.currentDoor = DoorType.BOTTOM_RIGHT;
       this.conversationState.awaitingDegrees = true;
