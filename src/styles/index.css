@@ -1,0 +1,43 @@
+﻿:root {
+  --brand: #b10f3a;
+  --brand-dark: #8f0c2f;
+  --brand-soft: #f1e6ea;
+  --ink: #231f20;
+  --panel: #ffffff;
+  --line: rgba(255, 255, 255, 0.35);
+  --muted: #e7d7dd;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: var(--ink);
+  background: var(--brand);
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+[role="button"],
+.sidebar-item,
+.tab,
+.btn,
+.table-row,
+.hierarchy-item,
+.tag {
+  cursor: pointer;
+}
+
+#root {
+  height: 100vh;
+}

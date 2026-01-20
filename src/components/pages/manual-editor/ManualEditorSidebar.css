@@ -1,0 +1,35 @@
+.manual-editor-sidebar {
+  display: grid;
+  grid-template-rows: 1fr;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+}
+
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.editor-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.editor-section-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.editor-section-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

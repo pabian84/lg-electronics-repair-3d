@@ -1,0 +1,500 @@
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
+import { OrbitControls, useGLTF } from "@react-three/drei";
+import * as THREE from "three";
+import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils";
+import "./ModelViewer.css";
+
+const DEFAULT_MODEL = "/models/M-Next3.glb";
+
+const DOOR_NODE_NAME = "ADC30035606_Door_Assembly,Refrigerator(Left)";
+const RIGHT_DOOR_NODE_NAME = "ADC30009336_Door_Assembly,Refrigerator(Right)";
+const LOWER_LEFT_DOOR_NODE_NAME = "ADC30009726_Door_Assembly,Freezer(Left)";
+const LOWER_RIGHT_DOOR_NODE_NAME = "ADC30009826_Door_Assembly,Freezer(Right)";
+const REMOVE_NODE_NAME = "5210JA3030J_Tube,Plastic";
+const BUCKET_NODE_NAME = "AKC73369920_Bucket_Assembly,Ice";
+
+type DoorState = {
+  isOpen: boolean;
+  degrees: number;
+};
+
+type DoorControls = {
+  openByDegrees: (degrees: number, speedSeconds?: number) => void;
+  close: (speedSeconds?: number) => void;
+  openRightByDegrees: (degrees: number, speedSeconds?: number) => void;
+  closeRight: (speedSeconds?: number) => void;
+  openLowerLeftByDegrees: (degrees: number, speedSeconds?: number) => void;
+  closeLowerLeft: (speedSeconds?: number) => void;
+  openLowerRightByDegrees: (degrees: number, speedSeconds?: number) => void;
+  closeLowerRight: (speedSeconds?: number) => void;
+  getState: () => DoorState;
+  getRightState: () => DoorState;
+  getLowerLeftState: () => DoorState;
+  getLowerRightState: () => DoorState;
+};
+
+type ModelViewerProps = {
+  modelPath?: string;
+  onSceneReady?: (scene: THREE.Object3D) => void;
+  focusTarget?: THREE.Object3D | null;
+  onDoorControlsReady?: (controls: DoorControls) => void;
+  overlay?: React.ReactNode;
+  allowDefaultModel?: boolean;
+};
+
+type DoorKey = "left" | "right" | "lowerLeft" | "lowerRight";
+
+type DoorConfig = {
+  nodeName: string;
+  openDirection: 1 | -1;
+};
+
+const DOORS: Record<DoorKey, DoorConfig> = {
+  left: {
+    nodeName: DOOR_NODE_NAME,
+    openDirection: -1,
+  },
+  right: {
+    nodeName: RIGHT_DOOR_NODE_NAME,
+    openDirection: 1,
+  },
+  lowerLeft: {
+    nodeName: LOWER_LEFT_DOOR_NODE_NAME,
+    openDirection: -1,
+  },
+  lowerRight: {
+    nodeName: LOWER_RIGHT_DOOR_NODE_NAME,
+    openDirection: 1,
+  },
+};
+
+const findNodeByName = (scene: THREE.Object3D, name: string) => {
+  let found: THREE.Object3D | null = null;
+  scene.traverse((child) => {
+    if (child.name === name) {
+      found = child;
+    }
+  });
+  return found;
+};
+
+const removeNodesByName = (root: THREE.Object3D, name: string): number => {
+  const nodesToRemove: THREE.Object3D[] = [];
+  root.traverse((child) => {
+    if (child.name === name) {
+      nodesToRemove.push(child);
+    }
+  });
+  nodesToRemove.forEach((node) => {
+    node.parent?.remove(node);
+  });
+  return nodesToRemove.length;
+};
+
+const animatePivotRotation = (
+  pivot: THREE.Object3D,
+  targetRotation: number,
+  durationMs: number,
+  onComplete?: () => void
+) => {
+  const startRotation = pivot.rotation.z;
+  const startTime = performance.now();
+
+  const step = (currentTime: number) => {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / durationMs, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const currentRotation = startRotation + (targetRotation - startRotation) * eased;
+
+    pivot.rotation.z = currentRotation;
+    pivot.updateMatrix();
+    pivot.updateMatrixWorld(true);
+
+    if (progress < 1) {
+      requestAnimationFrame(step);
+    } else if (onComplete) {
+      onComplete();
+    }
+  };
+
+  requestAnimationFrame(step);
+};
+
+function ModelContent({
+  url,
+  onSceneReady,
+  onLoaded,
+}: {
+  url: string;
+  onSceneReady: (scene: THREE.Object3D) => void;
+  onLoaded?: () => void;
+}) {
+  const { scene } = useGLTF(url);
+  const clonedScene = useMemo(() => cloneSkeleton(scene), [scene]);
+
+  useEffect(() => {
+    onSceneReady(clonedScene);
+    onLoaded?.();
+  }, [clonedScene, onSceneReady, onLoaded]);
+
+  return <primitive object={clonedScene} />;
+}
+
+function CameraManager({
+  scene,
+  focusTarget,
+  controlsRef,
+}: {
+  scene: THREE.Object3D | null;
+  focusTarget?: THREE.Object3D | null;
+  controlsRef: RefObject<any>;
+}) {
+  const { camera } = useThree();
+  const framedRef = useRef(false);
+
+  const frameObject = useCallback(
+    (object: THREE.Object3D, fitOffset = 1.2) => {
+      const box = new THREE.Box3().setFromObject(object);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const maxSize = Math.max(size.x, size.y, size.z, 1);
+
+      const fov = THREE.MathUtils.degToRad((camera as THREE.PerspectiveCamera).fov);
+      const distance = maxSize / (2 * Math.tan(fov / 2));
+      const direction = new THREE.Vector3(1, 1, 1).normalize();
+
+      camera.position.copy(center.clone().add(direction.multiplyScalar(distance * fitOffset)));
+      camera.near = distance / 100;
+      camera.far = distance * 100;
+      camera.updateProjectionMatrix();
+
+      if (controlsRef.current) {
+        controlsRef.current.target.copy(center);
+        controlsRef.current.update();
+      }
+    },
+    [camera, controlsRef]
+  );
+
+  useEffect(() => {
+    if (!scene || framedRef.current) {
+      return;
+    }
+    frameObject(scene, 1.35);
+    framedRef.current = true;
+  }, [scene, frameObject]);
+
+  useEffect(() => {
+    if (focusTarget) {
+      frameObject(focusTarget, 1.8);
+    }
+  }, [focusTarget, frameObject]);
+
+  return null;
+}
+
+export default function ModelViewer({
+  modelPath,
+  onSceneReady,
+  focusTarget,
+  onDoorControlsReady,
+  overlay,
+  allowDefaultModel = true,
+}: ModelViewerProps) {
+  const modelUrl = useMemo(
+    () => (allowDefaultModel ? modelPath ?? DEFAULT_MODEL : modelPath),
+    [allowDefaultModel, modelPath]
+  );
+  const [sceneRoot, setSceneRoot] = useState<THREE.Object3D | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const controlsRef = useRef<any>(null);
+  const pivotsRef = useRef<Record<DoorKey, THREE.Object3D | null>>({
+    left: null,
+    right: null,
+    lowerLeft: null,
+    lowerRight: null,
+  });
+  const doorStatesRef = useRef<Record<DoorKey, DoorState>>({
+    left: { isOpen: false, degrees: 0 },
+    right: { isOpen: false, degrees: 0 },
+    lowerLeft: { isOpen: false, degrees: 0 },
+    lowerRight: { isOpen: false, degrees: 0 },
+  });
+  const controlsRefValue = useRef<DoorControls | null>(null);
+
+  useEffect(() => {
+    if (!modelUrl) {
+      return;
+    }
+    useGLTF.preload(modelUrl);
+  }, [modelUrl]);
+
+  useEffect(() => {
+    setIsLoading(Boolean(modelUrl));
+  }, [modelUrl]);
+  
+  useEffect(() => {
+    return () => {
+      if (modelUrl) {
+        useGLTF.clear(modelUrl);
+      }
+    };
+  }, [modelUrl]);
+
+  const setupDoorHingePivot = useCallback((doorObject: THREE.Object3D) => {
+    if (!doorObject || pivotsRef.current.left) {
+      return;
+    }
+    doorObject.updateWorldMatrix(true, true);
+    const worldBox = new THREE.Box3().setFromObject(doorObject);
+    if (!isFinite(worldBox.min.x) || !doorObject.parent) {
+      return;
+    }
+    const hingeWorld = new THREE.Vector3(
+      worldBox.min.x,
+      (worldBox.min.y + worldBox.max.y) / 2,
+      (worldBox.min.z + worldBox.max.z) / 2
+    );
+    const parent = doorObject.parent;
+    const hingeInParent = hingeWorld.clone();
+    parent.worldToLocal(hingeInParent);
+    const pivot = new THREE.Group();
+    pivot.name = "DoorHingePivot_Left";
+    pivot.position.copy(hingeInParent);
+    parent.add(pivot);
+    pivot.updateMatrixWorld(true);
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore three.js has Object3D.attach in typings
+    pivot.attach(doorObject);
+    pivot.rotation.set(0, 0, 0);
+    pivot.updateMatrixWorld(true);
+    pivotsRef.current.left = pivot;
+  }, []);
+
+  const setupRightDoorHingePivot = useCallback((doorObject: THREE.Object3D) => {
+    if (!doorObject || pivotsRef.current.right) {
+      return;
+    }
+    doorObject.updateWorldMatrix(true, true);
+    const worldBox = new THREE.Box3().setFromObject(doorObject);
+    if (!isFinite(worldBox.max.x) || !doorObject.parent) {
+      return;
+    }
+    const hingeWorld = new THREE.Vector3(
+      worldBox.max.x,
+      (worldBox.min.y + worldBox.max.y) / 2,
+      (worldBox.min.z + worldBox.max.z) / 2
+    );
+    const parent = doorObject.parent;
+    const hingeInParent = hingeWorld.clone();
+    parent.worldToLocal(hingeInParent);
+    const pivot = new THREE.Group();
+    pivot.name = "DoorHingePivot_Right";
+    pivot.position.copy(hingeInParent);
+    parent.add(pivot);
+    pivot.updateMatrixWorld(true);
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore three.js has Object3D.attach in typings
+    pivot.attach(doorObject);
+    pivot.rotation.set(0, 0, 0);
+    pivot.updateMatrixWorld(true);
+    pivotsRef.current.right = pivot;
+  }, []);
+
+  const setupLowerLeftDoorHingePivot = useCallback((doorObject: THREE.Object3D) => {
+    if (!doorObject || pivotsRef.current.lowerLeft) {
+      return;
+    }
+    doorObject.updateWorldMatrix(true, true);
+    const worldBox = new THREE.Box3().setFromObject(doorObject);
+    if (!isFinite(worldBox.min.x) || !doorObject.parent) {
+      return;
+    }
+    const hingeWorld = new THREE.Vector3(
+      worldBox.min.x,
+      (worldBox.min.y + worldBox.max.y) / 2,
+      (worldBox.min.z + worldBox.max.z) / 2
+    );
+    const parent = doorObject.parent;
+    const hingeInParent = hingeWorld.clone();
+    parent.worldToLocal(hingeInParent);
+    const pivot = new THREE.Group();
+    pivot.name = "DoorHingePivot_LowerLeft";
+    pivot.position.copy(hingeInParent);
+    parent.add(pivot);
+    pivot.updateMatrixWorld(true);
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore three.js has Object3D.attach in typings
+    pivot.attach(doorObject);
+    pivot.rotation.set(0, 0, 0);
+    pivot.updateMatrixWorld(true);
+    pivotsRef.current.lowerLeft = pivot;
+  }, []);
+
+  const setupLowerRightDoorHingePivot = useCallback((doorObject: THREE.Object3D) => {
+    if (!doorObject || pivotsRef.current.lowerRight) {
+      return;
+    }
+    doorObject.updateWorldMatrix(true, true);
+    const worldBox = new THREE.Box3().setFromObject(doorObject);
+    if (!isFinite(worldBox.max.x) || !doorObject.parent) {
+      return;
+    }
+    const hingeWorld = new THREE.Vector3(
+      worldBox.max.x,
+      (worldBox.min.y + worldBox.max.y) / 2,
+      (worldBox.min.z + worldBox.max.z) / 2
+    );
+    const parent = doorObject.parent;
+    const hingeInParent = hingeWorld.clone();
+    parent.worldToLocal(hingeInParent);
+    const pivot = new THREE.Group();
+    pivot.name = "DoorHingePivot_LowerRight";
+    pivot.position.copy(hingeInParent);
+    parent.add(pivot);
+    pivot.updateMatrixWorld(true);
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore three.js has Object3D.attach in typings
+    pivot.attach(doorObject);
+    pivot.rotation.set(0, 0, 0);
+    pivot.updateMatrixWorld(true);
+    pivotsRef.current.lowerRight = pivot;
+  }, []);
+
+  useEffect(() => {
+    if (!sceneRoot) {
+      return;
+    }
+
+    removeNodesByName(sceneRoot, REMOVE_NODE_NAME);
+
+    const leftDoor = findNodeByName(sceneRoot, DOORS.left.nodeName);
+    if (leftDoor) {
+      setupDoorHingePivot(leftDoor);
+      const bucketNode = findNodeByName(sceneRoot, BUCKET_NODE_NAME);
+      if (bucketNode && pivotsRef.current.left) {
+        bucketNode.updateWorldMatrix(true, true);
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore three.js has Object3D.attach in typings
+        pivotsRef.current.left.attach(bucketNode);
+        pivotsRef.current.left.updateMatrixWorld(true);
+      }
+    }
+
+    const rightDoor = findNodeByName(sceneRoot, DOORS.right.nodeName);
+    if (rightDoor) {
+      setupRightDoorHingePivot(rightDoor);
+    }
+
+    const lowerLeftDoor = findNodeByName(sceneRoot, DOORS.lowerLeft.nodeName);
+    if (lowerLeftDoor) {
+      setupLowerLeftDoorHingePivot(lowerLeftDoor);
+    }
+
+    const lowerRightDoor = findNodeByName(sceneRoot, DOORS.lowerRight.nodeName);
+    if (lowerRightDoor) {
+      setupLowerRightDoorHingePivot(lowerRightDoor);
+    }
+
+    const runDoorAnimation = (doorKey: DoorKey, degrees: number, speedSeconds: number) => {
+      const pivot = pivotsRef.current[doorKey];
+      if (!pivot) {
+        return;
+      }
+      const direction = DOORS[doorKey].openDirection;
+      const targetRotation = direction * THREE.MathUtils.degToRad(degrees);
+      const durationMs = Math.max(speedSeconds, 0.1) * 1000;
+
+      animatePivotRotation(pivot, targetRotation, durationMs, () => {
+        doorStatesRef.current[doorKey] = {
+          isOpen: degrees > 0,
+          degrees,
+        };
+      });
+    };
+
+    const closeDoor = (doorKey: DoorKey, speedSeconds: number) => {
+      const pivot = pivotsRef.current[doorKey];
+      if (!pivot) {
+        return;
+      }
+      const durationMs = Math.max(speedSeconds, 0.1) * 1000;
+      animatePivotRotation(pivot, 0, durationMs, () => {
+        doorStatesRef.current[doorKey] = {
+          isOpen: false,
+          degrees: 0,
+        };
+      });
+    };
+
+    controlsRefValue.current = {
+      openByDegrees: (degrees, speedSeconds = 1) => runDoorAnimation("left", degrees, speedSeconds),
+      close: (speedSeconds = 1) => closeDoor("left", speedSeconds),
+      openRightByDegrees: (degrees, speedSeconds = 1) => runDoorAnimation("right", degrees, speedSeconds),
+      closeRight: (speedSeconds = 1) => closeDoor("right", speedSeconds),
+      openLowerLeftByDegrees: (degrees, speedSeconds = 1) => runDoorAnimation("lowerLeft", degrees, speedSeconds),
+      closeLowerLeft: (speedSeconds = 1) => closeDoor("lowerLeft", speedSeconds),
+      openLowerRightByDegrees: (degrees, speedSeconds = 1) => runDoorAnimation("lowerRight", degrees, speedSeconds),
+      closeLowerRight: (speedSeconds = 1) => closeDoor("lowerRight", speedSeconds),
+      getState: () => doorStatesRef.current.left,
+      getRightState: () => doorStatesRef.current.right,
+      getLowerLeftState: () => doorStatesRef.current.lowerLeft,
+      getLowerRightState: () => doorStatesRef.current.lowerRight,
+    };
+
+    onDoorControlsReady?.(controlsRefValue.current);
+    onSceneReady?.(sceneRoot);
+  }, [
+    sceneRoot,
+    onDoorControlsReady,
+    onSceneReady,
+    setupDoorHingePivot,
+    setupRightDoorHingePivot,
+    setupLowerLeftDoorHingePivot,
+    setupLowerRightDoorHingePivot,
+  ]);
+
+  if (!modelUrl) {
+    return <div className="viewer-placeholder">No model available.</div>;
+  }
+
+  return (
+    <div className="viewer-canvas">
+      {overlay}
+      {isLoading && (
+        <div className="viewer-loading-overlay" role="status" aria-label="Loading model">
+          <div className="viewer-loading-dots">
+            <span className="viewer-loading-dot" />
+            <span className="viewer-loading-dot" />
+            <span className="viewer-loading-dot" />
+          </div>
+          <div className="viewer-loading-text">Loading 3D model...</div>
+        </div>
+      )}
+      <Canvas
+        camera={{ fov: 45, near: 0.1, far: 100000, up: [0, 1, 0] }}
+        gl={{ antialias: true, powerPreference: "high-performance" }}
+      >
+        <color attach="background" args={["#f5f5f5"]} />
+        <ambientLight intensity={0.8} />
+        <directionalLight position={[1, 1, 1]} intensity={0.8} />
+        <directionalLight position={[-1, -1, -1]} intensity={0.4} />
+        <Suspense fallback={null}>
+          <ModelContent url={modelUrl} onSceneReady={setSceneRoot} onLoaded={() => setIsLoading(false)} />
+        </Suspense>
+        <CameraManager scene={sceneRoot} focusTarget={focusTarget} controlsRef={controlsRef} />
+        <OrbitControls
+          ref={controlsRef}
+          makeDefault
+          enablePan
+          enableZoom
+          enableRotate
+          dampingFactor={0.1}
+          rotateSpeed={0.5}
+          target={[0, 0, 0]}
+        />
+      </Canvas>
+    </div>
+  );
+}

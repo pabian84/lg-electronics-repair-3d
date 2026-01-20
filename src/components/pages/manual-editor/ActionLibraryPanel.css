@@ -1,0 +1,50 @@
+.library-panel .editor-section-body {
+  gap: 8px;
+}
+
+.library-actions-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 14px 8px;
+}
+
+.library-item {
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.library-item:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.library-name {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.library-note {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.library-manage {
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.library-manage:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
