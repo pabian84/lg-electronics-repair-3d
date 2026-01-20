@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { invalidate } from '@react-three/fiber';
-import { getPreciseBoundingBox, debugFocusCamera, createHighlightMaterial } from '../../utils/commonUtils';
+import { getPreciseBoundingBox, debugFocusCamera, createHighlightMaterial } from './commonUtils';
 
-const HighlightNode = 'AKC73369920_Bucket_Assembly,Ice';
+const HighlightNode = '4J03020A_Damper,Pipe';
 
 const highlightMaterial = createHighlightMaterial(0xff0000, 0.8);
 
@@ -112,7 +112,7 @@ export const findNodeHeight = (
 
     root.userData.__findNodeHeight = { helper, intervalId, meshes } satisfies FindNodeHeightState;
 
-    debugFocusCamera(camera, unionBox, controls, duration);
+    // debugFocusCamera(camera, unionBox, controls, duration); // 카메라 이동 주석 처리
 
     return { matchedNodes: matched, clear: () => clearPrevious(root) };
 };

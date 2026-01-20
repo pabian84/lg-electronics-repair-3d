@@ -4,6 +4,7 @@ import { OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils";
 import { removeClickedNode } from "../../../shared/utils/removeClickedNode";
+import { findNodeHeight } from "../../../shared/utils/findNodeHeight";
 import "./ModelViewer.css";
 
 const DEFAULT_MODEL = "/models/M-Next3.glb";
@@ -153,6 +154,7 @@ function CameraManager({
 }) {
   const { camera } = useThree();
   const framedRef = useRef(false);
+  const highlightedRef = useRef(false);
 
   const frameObject = useCallback(
     (object: THREE.Object3D, fitOffset = 1.2) => {
@@ -191,6 +193,20 @@ function CameraManager({
       frameObject(focusTarget, 1.8);
     }
   }, [focusTarget, frameObject]);
+
+  useEffect(() => {
+    if (!scene || highlightedRef.current) {
+      return;
+    }
+
+    // 초기 렌더링 시 HighlightNode를 하이라이트
+    findNodeHeight(scene, camera as THREE.PerspectiveCamera, {
+      target: controlsRef.current?.target || new THREE.Vector3(0, 0, 0),
+      update: () => controlsRef.current?.update(),
+    });
+
+    highlightedRef.current = true;
+  }, [scene, camera, controlsRef]);
 
   return null;
 }
