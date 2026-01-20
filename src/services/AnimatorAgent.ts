@@ -37,6 +37,8 @@ class OllamaClient {
   }
 }
 
+import { getDamperAnimationCommands, isDamperCommand } from './DamperAnimationService';
+
 // Door types and their identifiers
 export const DoorType = {
   TOP_LEFT: 'top_left',
@@ -664,23 +666,9 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
   private parseCompleteCommand(input: string): AnimationCommand[] {
     console.log('parseCompleteCommand>> ', input);
 
-    // 특정 키워드(예: damper) 감지 후 사전 정의된 명령 시퀀스 반환
-    if (input.includes('damper')) {
-      console.log('Detected damper service command');
-      return [
-        {
-          door: DoorType.TOP_LEFT,
-          action: AnimationAction.OPEN,
-          degrees: 45,
-          speed: 3
-        },
-        {
-          door: DoorType.BOTTOM_LEFT,
-          action: AnimationAction.OPEN,
-          degrees: 180,
-          speed: 3
-        }
-      ];
+    // Damper service command detection
+    if (isDamperCommand(input)) {
+      return getDamperAnimationCommands();
     }
 
     const doorType = this.identifyDoor(input);
