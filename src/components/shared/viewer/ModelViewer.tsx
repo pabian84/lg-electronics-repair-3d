@@ -3,9 +3,6 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils";
-import { removeClickedNode } from "../../../shared/utils/removeClickedNode";
-import { findNodeHeight } from "../../../shared/utils/findNodeHeight";
-import { animatorAgent } from "../../../services/AnimatorAgent";
 import "./ModelViewer.css";
 
 const DEFAULT_MODEL = "/models/M-Next3.glb";
@@ -16,21 +13,22 @@ const LOWER_LEFT_DOOR_NODE_NAME = "ADC30009726_Door_Assembly,Freezer(Left)";
 const LOWER_RIGHT_DOOR_NODE_NAME = "ADC30009826_Door_Assembly,Freezer(Right)";
 const REMOVE_NODE_NAME = "5210JA3030J_Tube,Plastic";
 const BUCKET_NODE_NAME = "AKC73369920_Bucket_Assembly,Ice";
-
+const LEFT_DOOR_LOWER_ANCHOR_NAME = "MBJ42493801_Cam,Locker_14466001";
+const LEFT_DOOR_LOWER_SHAFT_NAME = "AEH36821925_Hinge_Assembly,Center_183656_SHAFT";
 type DoorState = {
   isOpen: boolean;
   degrees: number;
 };
 
 type DoorControls = {
-  openByDegrees: (degrees: number, speedSeconds?: number) => void;
-  close: (speedSeconds?: number) => void;
-  openRightByDegrees: (degrees: number, speedSeconds?: number) => void;
-  closeRight: (speedSeconds?: number) => void;
-  openLowerLeftByDegrees: (degrees: number, speedSeconds?: number) => void;
-  closeLowerLeft: (speedSeconds?: number) => void;
-  openLowerRightByDegrees: (degrees: number, speedSeconds?: number) => void;
-  closeLowerRight: (speedSeconds?: number) => void;
+  openByDegrees: (degrees: number, speedSeconds?: number, onComplete?: () => void) => void;
+  close: (speedSeconds?: number, onComplete?: () => void) => void;
+  openRightByDegrees: (degrees: number, speedSeconds?: number, onComplete?: () => void) => void;
+  closeRight: (speedSeconds?: number, onComplete?: () => void) => void;
+  openLowerLeftByDegrees: (degrees: number, speedSeconds?: number, onComplete?: () => void) => void;
+  closeLowerLeft: (speedSeconds?: number, onComplete?: () => void) => void;
+  openLowerRightByDegrees: (degrees: number, speedSeconds?: number, onComplete?: () => void) => void;
+  closeLowerRight: (speedSeconds?: number, onComplete?: () => void) => void;
   getState: () => DoorState;
   getRightState: () => DoorState;
   getLowerLeftState: () => DoorState;
@@ -42,6 +40,7 @@ type ModelViewerProps = {
   onSceneReady?: (scene: THREE.Object3D) => void;
   focusTarget?: THREE.Object3D | null;
   onDoorControlsReady?: (controls: DoorControls) => void;
+  onNodeSelect?: (node: THREE.Object3D) => void;
   overlay?: React.ReactNode;
   allowDefaultModel?: boolean;
 };
@@ -99,9 +98,10 @@ const animatePivotRotation = (
   pivot: THREE.Object3D,
   targetRotation: number,
   durationMs: number,
+  axis: "y" | "z",
   onComplete?: () => void
 ) => {
-  const startRotation = pivot.rotation.z;
+  const startRotation = axis === "y" ? pivot.rotation.y : pivot.rotation.z;
   const startTime = performance.now();
 
   const step = (currentTime: number) => {
@@ -110,7 +110,11 @@ const animatePivotRotation = (
     const eased = 1 - Math.pow(1 - progress, 3);
     const currentRotation = startRotation + (targetRotation - startRotation) * eased;
 
-    pivot.rotation.z = currentRotation;
+    if (axis === "y") {
+      pivot.rotation.y = currentRotation;
+    } else {
+      pivot.rotation.z = currentRotation;
+    }
     pivot.updateMatrix();
     pivot.updateMatrixWorld(true);
 
@@ -142,7 +146,6 @@ function ModelContent({
   }, [clonedScene, onSceneReady, onLoaded]);
 
   return <primitive object={clonedScene} />;
-  // return <primitive object={clonedScene} onClick={removeClickedNode} />;
 }
 
 function CameraManager({
@@ -156,7 +159,6 @@ function CameraManager({
 }) {
   const { camera } = useThree();
   const framedRef = useRef(false);
-  const highlightedRef = useRef(false);
 
   const frameObject = useCallback(
     (object: THREE.Object3D, fitOffset = 1.2) => {
@@ -196,19 +198,44 @@ function CameraManager({
     }
   }, [focusTarget, frameObject]);
 
+  return null;
+}
+
+function SelectionManager({
+  scene,
+  onNodeSelect,
+}: {
+  scene: THREE.Object3D | null;
+  onNodeSelect?: (node: THREE.Object3D) => void;
+}) {
+  const { camera, gl } = useThree();
+
   useEffect(() => {
-    if (!scene || highlightedRef.current) {
+    if (!scene || !onNodeSelect) {
       return;
     }
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
 
-    // 초기 렌더링 시 HighlightNode를 하이라이트
-    findNodeHeight(scene, camera as THREE.PerspectiveCamera, {
-      target: controlsRef.current?.target || new THREE.Vector3(0, 0, 0),
-      update: () => controlsRef.current?.update(),
-    });
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!event.ctrlKey || event.button !== 0) {
+        return;
+      }
+      const rect = gl.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(scene.children, true);
+      if (hits.length > 0) {
+        onNodeSelect(hits[0].object);
+      }
+    };
 
-    highlightedRef.current = true;
-  }, [scene, camera, controlsRef]);
+    gl.domElement.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      gl.domElement.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [scene, onNodeSelect, camera, gl]);
 
   return null;
 }
@@ -218,6 +245,7 @@ export default function ModelViewer({
   onSceneReady,
   focusTarget,
   onDoorControlsReady,
+  onNodeSelect,
   overlay,
   allowDefaultModel = true,
 }: ModelViewerProps) {
@@ -228,6 +256,12 @@ export default function ModelViewer({
   const [sceneRoot, setSceneRoot] = useState<THREE.Object3D | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const controlsRef = useRef<any>(null);
+  const cameraProps = useMemo(
+    () => ({ fov: 45, near: 0.1, far: 100000, up: [0, 1, 0] as [number, number, number] }),
+    []
+  );
+  const glProps = useMemo(() => ({ antialias: true, powerPreference: "high-performance" }), []);
+  const orbitTarget = useMemo(() => [0, 0, 0] as [number, number, number], []);
   const pivotsRef = useRef<Record<DoorKey, THREE.Object3D | null>>({
     left: null,
     right: null,
@@ -252,7 +286,7 @@ export default function ModelViewer({
   useEffect(() => {
     setIsLoading(Boolean(modelUrl));
   }, [modelUrl]);
-
+  
   useEffect(() => {
     return () => {
       if (modelUrl) {
@@ -261,21 +295,50 @@ export default function ModelViewer({
     };
   }, [modelUrl]);
 
-  const setupDoorHingePivot = useCallback((doorObject: THREE.Object3D) => {
+  const setupDoorHingePivot = useCallback(
+    (
+      doorObject: THREE.Object3D,
+      anchorNode?: THREE.Object3D | null,
+      shaftNode?: THREE.Object3D | null
+    ) => {
     if (!doorObject || pivotsRef.current.left) {
       return;
     }
     doorObject.updateWorldMatrix(true, true);
-    const worldBox = new THREE.Box3().setFromObject(doorObject);
-    if (!isFinite(worldBox.min.x) || !doorObject.parent) {
+    const parent = doorObject.parent;
+    if (!parent) {
       return;
     }
-    const hingeWorld = new THREE.Vector3(
-      worldBox.min.x,
-      (worldBox.min.y + worldBox.max.y) / 2,
-      (worldBox.min.z + worldBox.max.z) / 2
-    );
-    const parent = doorObject.parent;
+
+    let hingeWorld: THREE.Vector3 | null = null;
+
+    if (anchorNode && shaftNode) {
+      anchorNode.updateWorldMatrix(true, true);
+      shaftNode.updateWorldMatrix(true, true);
+      const anchorWorld = new THREE.Vector3();
+      const shaftWorld = new THREE.Vector3();
+      anchorNode.getWorldPosition(anchorWorld);
+      shaftNode.getWorldPosition(shaftWorld);
+      const delta = anchorWorld.clone().sub(shaftWorld);
+      const doorWorld = new THREE.Vector3();
+      doorObject.getWorldPosition(doorWorld);
+      const targetWorld = doorWorld.add(delta);
+      const targetInParent = targetWorld.clone();
+      parent.worldToLocal(targetInParent);
+      doorObject.position.copy(targetInParent);
+      doorObject.updateWorldMatrix(true, true);
+      hingeWorld = anchorWorld;
+    } else {
+      const worldBox = new THREE.Box3().setFromObject(doorObject);
+      if (!isFinite(worldBox.min.x)) {
+        return;
+      }
+      hingeWorld = new THREE.Vector3(
+        worldBox.min.x,
+        (worldBox.min.y + worldBox.max.y) / 2,
+        (worldBox.min.z + worldBox.max.z) / 2
+      );
+    }
     const hingeInParent = hingeWorld.clone();
     parent.worldToLocal(hingeInParent);
     const pivot = new THREE.Group();
@@ -386,19 +449,16 @@ export default function ModelViewer({
       return;
     }
 
-    // CameraControls 초기화
-    if (controlsRef.current) {
-      animatorAgent.setCameraControls(controlsRef.current, sceneRoot);
-    }
-
     removeNodesByName(sceneRoot, REMOVE_NODE_NAME);
 
     const leftDoor = findNodeByName(sceneRoot, DOORS.left.nodeName);
     if (leftDoor) {
-      setupDoorHingePivot(leftDoor);
+      const anchorNode = findNodeByName(sceneRoot, LEFT_DOOR_LOWER_ANCHOR_NAME);
+      const shaftNode = findNodeByName(sceneRoot, LEFT_DOOR_LOWER_SHAFT_NAME);
+      setupDoorHingePivot(leftDoor, anchorNode, shaftNode);
       const bucketNode = findNodeByName(sceneRoot, BUCKET_NODE_NAME);
       if (bucketNode && pivotsRef.current.left) {
-        (bucketNode as THREE.Object3D).updateWorldMatrix(true, true);
+        bucketNode.updateWorldMatrix(true, true);
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore three.js has Object3D.attach in typings
         pivotsRef.current.left.attach(bucketNode);
@@ -421,7 +481,12 @@ export default function ModelViewer({
       setupLowerRightDoorHingePivot(lowerRightDoor);
     }
 
-    const runDoorAnimation = (doorKey: DoorKey, degrees: number, speedSeconds: number) => {
+    const runDoorAnimation = (
+      doorKey: DoorKey,
+      degrees: number,
+      speedSeconds: number,
+      onComplete?: () => void
+    ) => {
       const pivot = pivotsRef.current[doorKey];
       if (!pivot) {
         return;
@@ -429,38 +494,48 @@ export default function ModelViewer({
       const direction = DOORS[doorKey].openDirection;
       const targetRotation = direction * THREE.MathUtils.degToRad(degrees);
       const durationMs = Math.max(speedSeconds, 0.1) * 1000;
+      const axis = "z";
 
-      animatePivotRotation(pivot, targetRotation, durationMs, () => {
+      animatePivotRotation(pivot, targetRotation, durationMs, axis, () => {
         doorStatesRef.current[doorKey] = {
           isOpen: degrees > 0,
           degrees,
         };
+        onComplete?.();
       });
     };
 
-    const closeDoor = (doorKey: DoorKey, speedSeconds: number) => {
+    const closeDoor = (doorKey: DoorKey, speedSeconds: number, onComplete?: () => void) => {
       const pivot = pivotsRef.current[doorKey];
       if (!pivot) {
         return;
       }
       const durationMs = Math.max(speedSeconds, 0.1) * 1000;
-      animatePivotRotation(pivot, 0, durationMs, () => {
+      const axis = "z";
+      animatePivotRotation(pivot, 0, durationMs, axis, () => {
         doorStatesRef.current[doorKey] = {
           isOpen: false,
           degrees: 0,
         };
+        onComplete?.();
       });
     };
 
     controlsRefValue.current = {
-      openByDegrees: (degrees, speedSeconds = 1) => runDoorAnimation("left", degrees, speedSeconds),
-      close: (speedSeconds = 1) => closeDoor("left", speedSeconds),
-      openRightByDegrees: (degrees, speedSeconds = 1) => runDoorAnimation("right", degrees, speedSeconds),
-      closeRight: (speedSeconds = 1) => closeDoor("right", speedSeconds),
-      openLowerLeftByDegrees: (degrees, speedSeconds = 1) => runDoorAnimation("lowerLeft", degrees, speedSeconds),
-      closeLowerLeft: (speedSeconds = 1) => closeDoor("lowerLeft", speedSeconds),
-      openLowerRightByDegrees: (degrees, speedSeconds = 1) => runDoorAnimation("lowerRight", degrees, speedSeconds),
-      closeLowerRight: (speedSeconds = 1) => closeDoor("lowerRight", speedSeconds),
+      openByDegrees: (degrees, speedSeconds = 1, onComplete) =>
+        runDoorAnimation("left", degrees, speedSeconds, onComplete),
+      close: (speedSeconds = 1, onComplete) => closeDoor("left", speedSeconds, onComplete),
+      openRightByDegrees: (degrees, speedSeconds = 1, onComplete) =>
+        runDoorAnimation("right", degrees, speedSeconds, onComplete),
+      closeRight: (speedSeconds = 1, onComplete) => closeDoor("right", speedSeconds, onComplete),
+      openLowerLeftByDegrees: (degrees, speedSeconds = 1, onComplete) =>
+        runDoorAnimation("lowerLeft", degrees, speedSeconds, onComplete),
+      closeLowerLeft: (speedSeconds = 1, onComplete) =>
+        closeDoor("lowerLeft", speedSeconds, onComplete),
+      openLowerRightByDegrees: (degrees, speedSeconds = 1, onComplete) =>
+        runDoorAnimation("lowerRight", degrees, speedSeconds, onComplete),
+      closeLowerRight: (speedSeconds = 1, onComplete) =>
+        closeDoor("lowerRight", speedSeconds, onComplete),
       getState: () => doorStatesRef.current.left,
       getRightState: () => doorStatesRef.current.right,
       getLowerLeftState: () => doorStatesRef.current.lowerLeft,
@@ -497,8 +572,8 @@ export default function ModelViewer({
         </div>
       )}
       <Canvas
-        camera={{ fov: 45, near: 0.1, far: 100000, up: [0, 1, 0] }}
-        gl={{ antialias: true, powerPreference: "high-performance" }}
+        camera={cameraProps}
+        gl={glProps}
       >
         <color attach="background" args={["#f5f5f5"]} />
         <ambientLight intensity={0.8} />
@@ -508,6 +583,7 @@ export default function ModelViewer({
           <ModelContent url={modelUrl} onSceneReady={setSceneRoot} onLoaded={() => setIsLoading(false)} />
         </Suspense>
         <CameraManager scene={sceneRoot} focusTarget={focusTarget} controlsRef={controlsRef} />
+        <SelectionManager scene={sceneRoot} onNodeSelect={onNodeSelect} />
         <OrbitControls
           ref={controlsRef}
           makeDefault
@@ -516,7 +592,7 @@ export default function ModelViewer({
           enableRotate
           dampingFactor={0.1}
           rotateSpeed={0.5}
-          target={[0, 0, 0]}
+          target={orbitTarget}
         />
       </Canvas>
     </div>

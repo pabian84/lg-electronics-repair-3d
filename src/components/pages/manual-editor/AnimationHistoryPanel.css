@@ -4,6 +4,8 @@
 
 .history-panel.timeline-panel .editor-section-body {
   gap: 12px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .history-panel.timeline-panel .editor-section-body:has(.history-empty) {
@@ -16,6 +18,8 @@
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  flex: 1;
+  overflow-y: auto;
 }
 
 .timeline-items {

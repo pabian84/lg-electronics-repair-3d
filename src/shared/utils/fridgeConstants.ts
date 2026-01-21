@@ -1,1 +1,0 @@
-export const LEFT_DOOR_DAMPER_NODE_NAME = "MCK71751101_Cover,Body_3117001";

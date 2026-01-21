@@ -218,11 +218,30 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
     {
       id: "welcome",
       role: "system",
-      content: "Try asking for an action. Example: \"Open the top left door 90 degrees in 5 seconds.\"",
+      content: "명령어를 입력해보세요,: \"왼쪽 냉장고 문을 45도 열어.\"",
     },
   ]);
   const [inputValue, setInputValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    const handleCompletion = (message: string) => {
+      if (!message) {
+        return;
+      }
+      const completionMessage: ChatMessage = {
+        id: `${Date.now()}-complete-${Math.random().toString(36).slice(2, 8)}`,
+        role: "assistant",
+        content: message,
+      };
+      setMessages((prev) => [...prev, completionMessage]);
+    };
+
+    animatorAgent.setOnActionCompleted(handleCompletion);
+    return () => {
+      animatorAgent.setOnActionCompleted();
+    };
+  }, []);
 
   const orderedHistory = useMemo(
     () =>
@@ -279,12 +298,14 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
 
     try {
       const response = await animatorAgent.processUserInput(trimmed);
-      const assistantMessage: ChatMessage = {
-        id: `${Date.now()}-assistant`,
-        role: response.type === "error" ? "system" : "assistant",
-        content: response.message,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      if (response.type !== "action") {
+        const assistantMessage: ChatMessage = {
+          id: `${Date.now()}-assistant`,
+          role: response.type === "error" ? "system" : "assistant",
+          content: response.message,
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      }
 
       setHistoryItems((prev) => {
         const nextOrder = getNextOrder(prev);
@@ -566,6 +587,7 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
               onSceneReady={setSceneRoot}
               focusTarget={selectedNode}
               onDoorControlsReady={(controls) => animatorAgent.setDoorControls(controls)}
+              onNodeSelect={setSelectedNode}
               allowDefaultModel={false}
               overlay={
                 <button

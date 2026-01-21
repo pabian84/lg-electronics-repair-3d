@@ -110,6 +110,7 @@
 
 .hierarchy-item.selected {
   font-weight: 900;
+  color: #000;
 }
 
 .hierarchy-empty {
