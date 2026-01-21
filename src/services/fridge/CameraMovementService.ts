@@ -75,38 +75,41 @@ export class CameraMovementService {
         // ---------------------------------------------------------
         console.log('Phase 2, 3, 4: 곡선 궤적 진입 및 타겟 포커싱!!');
 
-        // [4단계] 화면 꽉 참 보장: 동적 거리 계산
+        // [4단계] 화면 꽉 참 보장: 바운딩 박스 기반 동적 거리 계산
         const diagonal = targetBox.min.distanceTo(targetBox.max);
         const fovRad = (this.cameraControls.object.fov * Math.PI) / 180;
         let zoomDistance = (diagonal / 2) / Math.tan(fovRad / 2);
         zoomDistance *= 1.3; // 여유 계수
 
-        // [2단계-5] 최종 위치: 로우 앵글 설정
+        // [2단계] 최종 위치 설정 (로우 앵글)
         const finalPos = targetCenter.clone().add(quarterViewDir.clone().multiplyScalar(zoomDistance));
-        finalPos.y -= (diagonal * 0.3);
+        finalPos.y -= (diagonal * 0.3); // 타겟보다 낮게 설정하여 웅장한 앵글 유도
 
         const startPos2 = this.cameraControls.object.position.clone();
         const startTarget2 = this.cameraControls.target.clone();
 
-        // [2단계-3] 제어점 설정 (U자 곡선)
+        // [2단계] 지미집 궤적을 위한 제어점 설정 (U자형 곡선)
         const controlPos = new THREE.Vector3(
             (startPos2.x + finalPos.x) / 2,
-            Math.min(startPos2.y, finalPos.y) - (diagonal * 0.5),
+            Math.min(startPos2.y, finalPos.y) - (diagonal * 0.5), // 경로 중간을 아래로 낮춤
             (startPos2.z + finalPos.z) / 2
         );
         const curve = new THREE.QuadraticBezierCurve3(startPos2, controlPos, finalPos);
 
-        console.log("2단계 시작: 지미집 곡선 이동");
-
+        // 애니메이션 실행
         await animate((progress: number, eased: number) => {
-            // [2단계-4] 곡선 경로 이동
+            // [핵심 수정] eased(이징이 적용된 0~1 값)를 사용하여 곡선 위의 정확한 좌표를 추출
             const point = curve.getPoint(eased);
+
+            // lerp가 아닌 copy를 사용하여 카메라 위치를 곡선 좌표로 강제 고정
             this.cameraControls.object.position.copy(point);
 
-            // [3단계] 주시점(Target) 고정 (강력한 Orbit 효과)
+            // [3단계] 주시점(Target) 고정 (Orbit 효과 재정의)
+            // 카메라가 곡선으로 움직이는 동안 시선은 타겟 중심을 향해 강력하게 달라붙음
             this.cameraControls.target.lerpVectors(startTarget2, targetCenter, eased);
+
             this.cameraControls.update();
-        }, { duration: 1800 });
+        }, { duration: 1800 }); // 지미집 연출을 위해 충분한 시간(1.8초) 부여
 
         console.log("[CameraMovementService] 모든 시네마틱 단계 완료");
     }
