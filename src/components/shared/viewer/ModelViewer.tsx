@@ -469,6 +469,11 @@ export default function ModelViewer({
       return;
     }
 
+    // CameraControls 초기화
+    if (controlsRef.current) {
+      animatorAgent.setCameraControls(controlsRef.current, sceneRoot);
+    }
+
     removeNodesByName(sceneRoot, REMOVE_NODE_NAME);
 
     const leftDoor = findNodeByName(sceneRoot, DOORS.left.nodeName);

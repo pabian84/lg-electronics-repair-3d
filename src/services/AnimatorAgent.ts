@@ -738,7 +738,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
   }
 
   // Parse complete commands (all parameters in one input)
-  private parseCompleteCommand(input: string): AnimationCommand | null {
+  private parseCompleteCommand(input: string): AnimationCommand | AnimationCommand[] | null {
 
     // Damper service command detection
     // Open the refrigerator door to service the left damper.
@@ -843,7 +843,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
   }
 
   // Execute animation command
-  private async executeAnimationCommand(command: AnimationCommand): Promise<LLMResponse> {
+  private async executeAnimationCommand(commands: AnimationCommand | AnimationCommand[]): Promise<LLMResponse> {
     if (!this.doorControls) {
       return {
         type: 'error',
@@ -852,6 +852,83 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
     }
 
     try {
+      // Check if commands are damper commands (need simultaneous execution)
+      const commandsArray = Array.isArray(commands) ? commands : [commands];
+      const isDamperCommands = areFridgeDamperCommands(commandsArray);
+
+      if (isDamperCommands) {
+        const locale = this.lastInputLocale;
+        const responseVerbPromise = this.resolveActionVerb(this.lastUserInput, AnimationAction.OPEN, locale);
+        let remaining = commandsArray.length;
+
+        const handleCompletion = () => {
+          remaining -= 1;
+          if (remaining <= 0) {
+            void responseVerbPromise.then((responseVerb) => {
+              const completionMessage = locale === 'ko'
+                ? '댐퍼 서비스를 위한 문 열기 완료'
+                : 'Completed: Doors opened for damper service';
+              this.onActionCompleted?.(completionMessage);
+            });
+          }
+        };
+
+        // Execute all damper commands simultaneously
+        commandsArray.forEach(command => {
+          const degrees = command.degrees || 90;
+          const speed = command.speed || 1;
+
+          if (command.action === AnimationAction.OPEN) {
+            if (command.door === DoorType.TOP_LEFT) {
+              this.doorControls.openByDegrees(degrees, speed, handleCompletion);
+            } else if (command.door === DoorType.TOP_RIGHT) {
+              this.doorControls.openRightByDegrees(degrees, speed, handleCompletion);
+            } else if (command.door === DoorType.BOTTOM_LEFT) {
+              this.doorControls.openLowerLeftByDegrees(degrees, speed, handleCompletion);
+            } else if (command.door === DoorType.BOTTOM_RIGHT) {
+              this.doorControls.openLowerRightByDegrees(degrees, speed, handleCompletion);
+            }
+          } else if (command.action === AnimationAction.CLOSE) {
+            if (command.door === DoorType.TOP_LEFT) {
+              this.doorControls.close(speed, handleCompletion);
+            } else if (command.door === DoorType.TOP_RIGHT) {
+              this.doorControls.closeRight(speed, handleCompletion);
+            } else if (command.door === DoorType.BOTTOM_LEFT) {
+              this.doorControls.closeLowerLeft(speed, handleCompletion);
+            } else if (command.door === DoorType.BOTTOM_RIGHT) {
+              this.doorControls.closeLowerRight(speed, handleCompletion);
+            }
+          }
+        });
+
+        const responseVerb = await responseVerbPromise;
+        const message = locale === 'ko'
+          ? '댐퍼 서비스를 위해 문을 열고 있습니다'
+          : 'Opening doors for damper service';
+
+        // Calculate max speed to determine animation duration
+        const maxSpeed = Math.max(...commandsArray.map(cmd => cmd.speed || 1));
+
+        // Wait for the longest animation to complete
+        await new Promise(resolve => setTimeout(resolve, maxSpeed * 1000));
+
+        // Move camera to the left door damper node after damper animation
+        if (this.cameraMovementService) {
+          console.log('this.cameraMovementService!!!');
+          await this.cameraMovementService.moveCameraToLeftDoorDamper();
+        } else {
+          console.log('CameraMovementService is not initialized');
+        }
+
+        return {
+          type: 'action',
+          message,
+          command: commandsArray[0] // Return first command as representative
+        };
+      }
+
+      // Handle single command case
+      const command = commandsArray[0];
       const degrees = command.degrees || 90;
       const speed = command.speed || 1;
       const locale = this.lastInputLocale;
@@ -869,9 +946,6 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
           this.onActionCompleted?.(completionMessage);
         });
       };
-
-      // Check if commands are damper commands (need simultaneous execution)
-      const isFridgeDamperCommands = areFridgeDamperCommands(command);
 
       if (command.action === AnimationAction.OPEN) {
         if (command.door === DoorType.TOP_LEFT) {
