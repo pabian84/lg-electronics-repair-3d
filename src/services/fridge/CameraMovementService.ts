@@ -43,24 +43,22 @@ export class CameraMovementService {
         // 2. 지오메트리 생성 및 점선 패턴 계산
         const geometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
 
-        // 3. 점선 재질 설정 (노란색 점선)
-        const material = new THREE.LineDashedMaterial({
+        // 3. 두꺼운 선 재질 설정 (빨간색 실선)
+        const material = new THREE.LineBasicMaterial({
             color: 0xff0000,
-            dashSize: 0.4,
-            gapSize: 0.1,
+            linewidth: 15, // 두꺼운 선
         });
 
         const line = new THREE.Line(geometry, material);
-        line.computeLineDistances(); // 점선 계산 필수
 
         // 4. 씬에 추가 (디버깅용 객체임을 식별하기 위해 이름 부여)
         line.name = "DEBUG_CAMERA_PATH";
         this.sceneRoot.add(line);
 
         // 5. 10초 후 자동 제거 (화면 유지 시간 조절 가능)
-        setTimeout(() => {
+        /* setTimeout(() => {
             if (this.sceneRoot) this.sceneRoot.remove(line);
-        }, 10000);
+        }, 10000); */
     }
 
     /**
@@ -144,7 +142,7 @@ export class CameraMovementService {
             this.cameraControls.object.position.copy(point);
 
             // [3단계] 주시점(Target) 고정: 카메라가 아래로 크게 휘어지는 동안 시선은 타겟에 강력하게 고정
-            this.cameraControls.target.lerpVectors(startTarget2, targetCenter, eased);
+            this.cameraControls.target.copy(targetCenter);
 
             this.cameraControls.update();
         }, { duration: 2000 }); // 깊어진 궤적을 충분히 감상할 수 있도록 시간(2초) 소폭 증가
