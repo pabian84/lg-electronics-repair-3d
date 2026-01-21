@@ -64,10 +64,10 @@ export class CameraMovementService {
         const startTarget = this.cameraControls.target.clone();
 
         await animate((progress, eased) => {
-            // Interpolate between start and target position with horizontal movement constraint
+            // Interpolate between start and target position with horizontal movement and slight downward angle
             const currentPosition = new THREE.Vector3(
                 startPosition.x + (targetPosition.x - startPosition.x) * eased,
-                startPosition.y, // Keep Y position constant for horizontal movement
+                targetPosition.y - 1.5, // Move camera slightly below target for upward view
                 startPosition.z + (targetPosition.z - startPosition.z) * eased
             );
             this.cameraControls.object.position.copy(currentPosition);
