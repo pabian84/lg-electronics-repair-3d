@@ -37,7 +37,7 @@ class OllamaClient {
   }
 }
 
-import { getDamperAnimationCommands, isDamperCommand } from './DamperAnimationService';
+import { getFridgeDamperAnimationCommands, isFridgeDamperCommand } from './fridge/DamperAnimationService';
 
 // Door types and their identifiers
 export const DoorType = {
@@ -669,8 +669,8 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
     // Damper service command detection
     // Open the refrigerator door to service the left damper.
     // Open the refrigerator door to service the right damper.
-    if (isDamperCommand(input)) {
-      return getDamperAnimationCommands(input);
+    if (isFridgeDamperCommand(input)) {
+      return getFridgeDamperAnimationCommands(input);
     }
 
     const doorType = this.identifyDoor(input);

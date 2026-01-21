@@ -36,7 +36,7 @@ const RIGHT_DAMPER_COMMANDS: AnimationCommand[] = [
 ];
 
 // Get damper animation commands based on input direction
-export const getDamperAnimationCommands = (input: string): AnimationCommand[] => {
+export const getFridgeDamperAnimationCommands = (input: string): AnimationCommand[] => {
     console.log('Detected damper service command:', input);
 
     // Detect left/right direction before damper keyword
@@ -72,6 +72,6 @@ export const areDamperCommands = (commands: AnimationCommand[]): boolean => {
 };
 
 // Check if input contains damper keyword
-export const isDamperCommand = (input: string): boolean => {
+export const isFridgeDamperCommand = (input: string): boolean => {
     return input.includes('damper');
 };
