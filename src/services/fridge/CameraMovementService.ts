@@ -122,30 +122,50 @@ export class CameraMovementService {
             Math.min(startPos2.y, finalPos.y) - (diagonal * 1.5), // <--- 깊이(Depth) 강화
             (startPos2.z + finalPos.z) / 2
         );
+
         const curve = new THREE.QuadraticBezierCurve3(startPos2, controlPos, finalPos);
 
         // [디버깅] 1~4단계 핵심 포인트 추출
         const pathPoints = [
-            this.cameraControls.object.position.clone(), // 현재 시작점
-            alignPos.clone(),                            // 1단계: 전체 조망 포인트
-            controlPos.clone(),                          // 2단계: 지미집 최저점 (포물선 정점)
-            finalPos.clone()                             // 4단계: 최종 타겟 근접 포인트
+            this.cameraControls.object.position.clone(),
+            alignPos.clone(),
+            controlPos.clone(),
+            finalPos.clone()
         ];
 
-        // 경로 그리기 실행
         this.drawCameraPath(pathPoints);
+
+        // 문제 원인: Controls의 Damping(관성)이 프레임별 위치 강제 할당을 방해하여 곡선 궤적을 이탈함.
+        // 해결 방안: 시네마틱 이동 구간 동안만 Damping을 비활성화(False)하여 궤적 정밀 추적 보장.
+
+        // 1. 기존 Damping 설정 저장 (OrbitControls 기준 'enableDamping', 일부 라이브러리는 'dampingEnabled'일 수 있음)
+        const originalDamping = this.cameraControls.enableDamping;
+
+        // 2. Damping 비활성화: 입력된 좌표 그대로 렌더링하도록 설정
+        if (this.cameraControls.hasOwnProperty('enableDamping')) {
+            this.cameraControls.enableDamping = false;
+        }
 
         // 애니메이션 실행
         await animate((progress: number, eased: number) => {
-            // eased를 사용하여 곡선 위의 좌표를 추출하여 카메라 위치 강제 고정
+            // Bezier 곡선 위의 정확한 좌표 추출
             const point = curve.getPoint(eased);
+            console.log('point>> ', point);
+            // 카메라 위치 강제 동기화 (Damping이 꺼져 있어 정확한 위치로 이동)
             this.cameraControls.object.position.copy(point);
 
-            // [3단계] 주시점(Target) 고정: 카메라가 아래로 크게 휘어지는 동안 시선은 타겟에 강력하게 고정
+            // [3단계] 타겟 주시 유지
             this.cameraControls.target.copy(targetCenter);
 
+            // Controls 업데이트 (위치/타겟 변경 사항 반영)
             this.cameraControls.update();
-        }, { duration: 2000 }); // 깊어진 궤적을 충분히 감상할 수 있도록 시간(2초) 소폭 증가
+        }, { duration: 5000 });
+
+        // 3. 애니메이션 종료 후 Damping 설정 원복 (사용자 제어감 복구)
+        if (this.cameraControls.hasOwnProperty('enableDamping')) {
+            this.cameraControls.enableDamping = originalDamping;
+            this.cameraControls.update();
+        }
 
         console.log("[CameraMovementService] 모든 시네마틱 단계 완료");
     }
