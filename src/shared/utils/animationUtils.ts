@@ -28,16 +28,55 @@ export interface AnimationOptions {
     duration?: number; // milliseconds
     easing?: EasingFunction;
     onProgress?: (progress: number) => void;
+    onUpdate?: () => void;
+    onComplete?: () => void;
 }
 
-// Promise-based smooth animation function
+// Promise-based smooth animation function for property interpolation
 export const animate = (
-    update: (progress: number, eased: number) => void,
+    target: any,
+    params: any,
     options: AnimationOptions = {}
 ): Promise<void> => {
     const duration = options.duration || 1000;
     const easing = options.easing || easingFunctions.easeInOutCubic;
     const startTime = performance.now();
+
+    // If target is a function, treat as update callback
+    if (typeof target === 'function') {
+        return new Promise((resolve) => {
+            const step = (currentTime: number) => {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const eased = easing(progress);
+
+                target(progress, eased);
+
+                if (options.onProgress) {
+                    options.onProgress(eased);
+                }
+
+                if (progress < 1) {
+                    requestAnimationFrame(step);
+                } else {
+                    if (options.onComplete) {
+                        options.onComplete();
+                    }
+                    resolve();
+                }
+            };
+
+            requestAnimationFrame(step);
+        });
+    }
+
+    // Otherwise, treat as property animation
+    const startValues: any = {};
+    for (const prop in params) {
+        if (params.hasOwnProperty(prop) && typeof params[prop] === 'number') {
+            startValues[prop] = target[prop];
+        }
+    }
 
     return new Promise((resolve) => {
         const step = (currentTime: number) => {
@@ -45,7 +84,15 @@ export const animate = (
             const progress = Math.min(elapsed / duration, 1);
             const eased = easing(progress);
 
-            update(progress, eased);
+            for (const prop in params) {
+                if (params.hasOwnProperty(prop) && typeof params[prop] === 'number') {
+                    target[prop] = startValues[prop] + (params[prop] - startValues[prop]) * eased;
+                }
+            }
+
+            if (options.onUpdate) {
+                options.onUpdate();
+            }
 
             if (options.onProgress) {
                 options.onProgress(eased);
@@ -54,6 +101,9 @@ export const animate = (
             if (progress < 1) {
                 requestAnimationFrame(step);
             } else {
+                if (options.onComplete) {
+                    options.onComplete();
+                }
                 resolve();
             }
         };
@@ -153,9 +203,14 @@ export const calculateCameraTargetPosition = (
             direction = new THREE.Vector3(1, 0, 1).normalize();
         }
     } else {
-        // Ensure direction is horizontal if requested (optional but recommended for this use case)
+        // Always ensure horizontal direction for front view (Y-axis = 0)
         direction = new THREE.Vector3(direction.x, 0, direction.z).normalize();
     }
 
-    return center.clone().add(direction.multiplyScalar(cameraDistance));
+    const targetPosition = center.clone().add(direction.multiplyScalar(cameraDistance));
+
+    // Ensure camera is at the same height as target center for horizontal view
+    targetPosition.y = center.y;
+
+    return targetPosition;
 };
