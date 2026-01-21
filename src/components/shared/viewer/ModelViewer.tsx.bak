@@ -163,7 +163,6 @@ function CameraManager({
 }) {
   const { camera } = useThree();
   const framedRef = useRef(false);
-  const highlightedRef = useRef(false);
 
   const frameObject = useCallback(
     (object: THREE.Object3D, fitOffset = 1.2) => {
@@ -203,20 +202,6 @@ function CameraManager({
     }
   }, [focusTarget, frameObject]);
 
-  useEffect(() => {
-    if (!scene || highlightedRef.current) {
-      return;
-    }
-
-    // 초기 렌더링 시 HighlightNode를 하이라이트
-    findNodeHeight(scene, camera as THREE.PerspectiveCamera, {
-      target: controlsRef.current?.target || new THREE.Vector3(0, 0, 0),
-      update: () => controlsRef.current?.update(),
-    });
-
-    highlightedRef.current = true;
-  }, [scene, camera, controlsRef]);
-
   return null;
 }
 
@@ -230,9 +215,19 @@ function SelectionManager({
   const { camera, gl } = useThree();
 
   useEffect(() => {
+    if (!scene || highlightedRef.current) {
+      return;
+    }
+
     if (!scene || !onNodeSelect) {
       return;
     }
+
+    // 초기 렌더링 시 HighlightNode를 하이라이트
+    findNodeHeight(scene, camera as THREE.PerspectiveCamera, {
+      target: controlsRef.current?.target || new THREE.Vector3(0, 0, 0),
+      update: () => controlsRef.current?.update(),
+    });
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -280,7 +275,7 @@ export default function ModelViewer({
     () => ({ fov: 45, near: 0.1, far: 100000, up: [0, 1, 0] as [number, number, number] }),
     []
   );
-  const glProps = useMemo(() => ({ antialias: true, powerPreference: "high-performance" as any }), []);
+  const glProps = useMemo(() => ({ antialias: true, powerPreference: "high-performance" }), []);
   const orbitTarget = useMemo(() => [0, 0, 0] as [number, number, number], []);
   const pivotsRef = useRef<Record<DoorKey, THREE.Object3D | null>>({
     left: null,
@@ -478,7 +473,7 @@ export default function ModelViewer({
       setupDoorHingePivot(leftDoor, anchorNode, shaftNode);
       const bucketNode = findNodeByName(sceneRoot, BUCKET_NODE_NAME);
       if (bucketNode && pivotsRef.current.left) {
-        (bucketNode as THREE.Object3D).updateWorldMatrix(true, true);
+        bucketNode.updateWorldMatrix(true, true);
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore three.js has Object3D.attach in typings
         pivotsRef.current.left.attach(bucketNode);
@@ -594,7 +589,6 @@ export default function ModelViewer({
       <Canvas
         camera={cameraProps}
         gl={glProps}
-      // gl={{ antialias: true, powerPreference: "high-performance" }}
       >
         <color attach="background" args={["#f5f5f5"]} />
         <ambientLight intensity={0.8} />
