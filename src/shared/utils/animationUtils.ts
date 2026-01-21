@@ -123,11 +123,12 @@ export const calculateCameraTargetPosition = (
 
     let cameraDistance = Math.abs(diagonal / 2 / Math.tan(fov / 2));
 
-    let zoomRatio = options.zoomRatio || 2.0;
+    // Adjust zoom ratio to bring camera closer for better view
+    let zoomRatio = options.zoomRatio || 1.5; // Reduce zoom ratio to get closer
     if (diagonal < 5) {
-        zoomRatio = options.zoomRatio || 3.0;
+        zoomRatio = options.zoomRatio || 2.0;
     } else if (diagonal > 20) {
-        zoomRatio = options.zoomRatio || 1.5;
+        zoomRatio = options.zoomRatio || 1.2;
     }
     cameraDistance *= zoomRatio;
 
