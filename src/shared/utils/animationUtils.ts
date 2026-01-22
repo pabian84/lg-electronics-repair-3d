@@ -1,123 +1,152 @@
+import gsap from 'gsap';
 import * as THREE from 'three';
 
-// Easing function types
-export type EasingFunction = (t: number) => number;
+// ============================================================================
+// GSAP 기반 애니메이션 유틸리티
+// ============================================================================
 
-// Easing functions
-export const easingFunctions = {
-    // Ease in-out cubic
-    easeInOutCubic: (t: number): number => {
-        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-    },
-    // Ease out cubic
-    easeOutCubic: (t: number): number => {
-        return 1 - Math.pow(1 - t, 3);
-    },
-    // Ease in cubic
-    easeInCubic: (t: number): number => {
-        return t * t * t;
-    },
-    // Linear
-    linear: (t: number): number => {
-        return t;
-    }
-};
-
-// Animation options
+/**
+ * 애니메이션 옵션 인터페이스
+ */
 export interface AnimationOptions {
-    duration?: number; // milliseconds
-    easing?: EasingFunction;
+    duration?: number;      // milliseconds
+    easing?: string;        // GSAP easing 이름 (기본값: 'power2.out')
     onProgress?: (progress: number) => void;
     onUpdate?: () => void;
     onComplete?: () => void;
 }
 
-// Promise-based smooth animation function for property interpolation
+/**
+ * 카메라 타겟 옵션 인터페이스
+ */
+export interface CameraTargetOptions {
+    zoomRatio?: number;
+    direction?: THREE.Vector3;
+}
+
+/**
+ * GSAP 기반 애니메이션 함수 (Promise 반환)
+ * - 기존 animate()와 동일한 인터페이스 유지
+ * - 내부적으로 GSAP.to() 사용
+ */
 export const animate = (
     target: any,
     params: any,
     options: AnimationOptions = {}
 ): Promise<void> => {
     const duration = options.duration || 1000;
-    const easing = options.easing || easingFunctions.easeInOutCubic;
-    const startTime = performance.now();
-
-    // If target is a function, treat as update callback
-    if (typeof target === 'function') {
-        return new Promise((resolve) => {
-            const step = (currentTime: number) => {
-                const elapsed = currentTime - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const eased = easing(progress);
-
-                target(progress, eased);
-
-                if (options.onProgress) {
-                    options.onProgress(eased);
-                }
-
-                if (progress < 1) {
-                    requestAnimationFrame(step);
-                } else {
-                    if (options.onComplete) {
-                        options.onComplete();
-                    }
-                    resolve();
-                }
-            };
-
-            requestAnimationFrame(step);
-        });
-    }
-
-    // Otherwise, treat as property animation
-    const startValues: any = {};
-    for (const prop in params) {
-        if (params.hasOwnProperty(prop) && typeof params[prop] === 'number') {
-            startValues[prop] = target[prop];
-        }
-    }
+    const easing = options.easing || 'power2.out';
 
     return new Promise((resolve) => {
-        const step = (currentTime: number) => {
-            const elapsed = currentTime - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            const eased = easing(progress);
+        // 숫자 속성 애니메이션
+        const numericParams: any = {};
+        for (const prop in params) {
+            if (params.hasOwnProperty(prop) && typeof params[prop] === 'number') {
+                numericParams[prop] = params[prop];
+            }
+        }
 
-            for (const prop in params) {
-                if (params.hasOwnProperty(prop) && typeof params[prop] === 'number') {
-                    target[prop] = startValues[prop] + (params[prop] - startValues[prop]) * eased;
+        gsap.to(target, {
+            ...numericParams,
+            duration: duration / 1000, // ms → seconds 변환
+            ease: easing,
+            onUpdate: () => {
+                options.onUpdate?.();
+                if (options.onProgress) {
+                    // 진행률 계산 (GSAP의 progress 사용)
+                    const progress = (gsap.getProperty(target, 'x') as number) !== undefined
+                        ? (gsap.getProperty(target, 'x') as number)
+                        : 0;
+                    options.onProgress(progress);
                 }
-            }
-
-            if (options.onUpdate) {
-                options.onUpdate();
-            }
-
-            if (options.onProgress) {
-                options.onProgress(eased);
-            }
-
-            if (progress < 1) {
-                requestAnimationFrame(step);
-            } else {
-                if (options.onComplete) {
-                    options.onComplete();
-                }
+            },
+            onComplete: () => {
+                options.onComplete?.();
                 resolve();
             }
-        };
-
-        requestAnimationFrame(step);
+        });
     });
 };
 
-// Node caching utility
+/**
+ * 콜백 기반 애니메이션 (기존 animate()와 동일한 시그니처)
+ * @param callback (progress: number, eased: number) => void
+ */
+export const animateCallback = (
+    callback: (progress: number, eased: number) => void,
+    options: AnimationOptions = {}
+): Promise<void> => {
+    const duration = options.duration || 1000;
+    const easing = options.easing || 'power2.out';
+
+    return new Promise((resolve) => {
+        const anim = gsap.to({ progress: 0 }, {
+            progress: 1,
+            duration: duration / 1000,
+            ease: easing,
+            onUpdate: function () {
+                const progress = this.progress();
+                // easing 함수 적용
+                const eased = applyEasing(progress, easing);
+                callback(progress, eased);
+                options.onProgress?.(progress);
+            },
+            onComplete: () => {
+                options.onComplete?.();
+                resolve();
+            }
+        });
+    });
+};
+
+/**
+ * 이징 함수 적용 헬퍼
+ */
+const applyEasing = (t: number, easing: string): number => {
+    switch (easing) {
+        case 'power1.in': return t * t;
+        case 'power1.out': return 1 - (1 - t) * (1 - t);
+        case 'power1.inOut': return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        case 'power2.in': return t * t * t;
+        case 'power2.out': return 1 - Math.pow(1 - t, 3);
+        case 'power2.inOut': return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        case 'power3.in': return t * t * t * t;
+        case 'power3.out': return 1 - Math.pow(1 - t, 4);
+        case 'power3.inOut': return t < 0.5 ? 4 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2;
+        case 'back.in': return 1.70158 * t * t * t - t * t * t;
+        case 'back.out': return 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2);
+        case 'back.inOut': {
+            const s = 1.70158 * 1.525;
+            return t < 0.5 ? (2 * t) * t * ((s + 1) * 2 * t - s) / 2 : ((2 * t - 2) * t * ((s + 1) * (2 * t - 2) + s) + 2) / 2;
+        }
+        case 'elastic.out': {
+            const c4 = (2 * Math.PI) / 3;
+            return t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+        }
+        case 'bounce.out': {
+            const n1 = 7.5625;
+            const d1 = 2.75;
+            if (t < 1 / d1) return n1 * t * t;
+            if (t < 2 / d1) return n1 * (t -= 1.5 / d1) * t + 0.75;
+            if (t < 2.5 / d1) return n1 * (t -= 2.25 / d1) * t + 0.9375;
+            return n1 * (t -= 2.625 / d1) * t + 0.984375;
+        }
+        default: return t; // linear
+    }
+};
+
+// ============================================================================
+// 노드 캐싱 유틸리티
+// ============================================================================
+
+/**
+ * 3D 씬에서 노드를 이름으로 찾고 캐싱하는 유틸리티 클래스
+ */
 export class NodeCache {
     private cache: Map<string, THREE.Object3D> = new Map();
 
     /**
-     * Find a node by name in the scene with caching
+     * 이름으로 노드 찾기 (캐싱 지원)
      */
     findNodeByName(sceneRoot: THREE.Object3D, nodeName: string): THREE.Object3D | null {
         if (this.cache.has(nodeName)) {
@@ -139,27 +168,259 @@ export class NodeCache {
     }
 
     /**
-     * Clear all cached nodes
+     * 모든 캐시된 노드 클리어
      */
     clear(): void {
         this.cache.clear();
     }
 
     /**
-     * Get number of cached nodes
+     * 캐시된 노드 수 반환
      */
     size(): number {
         return this.cache.size;
     }
 }
 
-// Camera targeting options
-export interface CameraTargetOptions {
-    zoomRatio?: number;
-    direction?: THREE.Vector3;
+// ============================================================================
+// 시네마틱 시퀀스 빌더 (GSAP Timeline 활용)
+// ============================================================================
+
+/**
+ * 시네마틱 카메라 시퀀스 빌더
+ * - 분해 과정과 같은 복잡한 애니메이션 시퀀스 생성
+ * - GSAP Timeline 기반
+ */
+export class CinematicSequence {
+    private timeline: gsap.core.Timeline;
+    private camera: THREE.PerspectiveCamera | null = null;
+    private targetCenter: THREE.Vector3 = new THREE.Vector3();
+
+    constructor() {
+        this.timeline = gsap.timeline({
+            paused: true,
+            onComplete: () => {
+                console.log('🎬 시네마틱 시퀀스 완료');
+            }
+        });
+    }
+
+    /**
+     * 카메라 설정 (lookAt 대상 포함)
+     */
+    setCamera(camera: THREE.PerspectiveCamera, target?: THREE.Vector3): this {
+        this.camera = camera;
+        if (target) {
+            this.targetCenter.copy(target);
+        }
+        return this;
+    }
+
+    /**
+     * 카메라 이동 추가
+     */
+    addCameraMove(params: {
+        position: THREE.Vector3;
+        target?: THREE.Vector3;
+        duration?: number;
+        easing?: string;
+    }): this {
+        if (!this.camera) {
+            console.warn('CinematicSequence: 카메라가 설정되지 않았습니다');
+            return this;
+        }
+
+        const duration = (params.duration || 1500) / 1000;
+        const easing = params.easing || 'power3.inOut';
+        const target = params.target || this.targetCenter;
+
+        this.timeline.to(this.camera.position, {
+            x: params.position.x,
+            y: params.position.y,
+            z: params.position.z,
+            duration,
+            ease: easing,
+            onUpdate: () => {
+                this.camera!.lookAt(target);
+            }
+        }, '<'); // '<' = 이전 애니메이션과 동시 시작
+
+        return this;
+    }
+
+    /**
+     * 베지에 곡선 경로로 카메라 이동
+     */
+    addBezierPath(params: {
+        start: THREE.Vector3;
+        control: THREE.Vector3;
+        end: THREE.Vector3;
+        duration?: number;
+        easing?: string;
+    }): this {
+        if (!this.camera) {
+            console.warn('CinematicSequence: 카메라가 설정되지 않았습니다');
+            return this;
+        }
+
+        const duration = (params.duration || 2500) / 1000;
+
+        // 2차 베지에 곡선 생성
+        const curve = new THREE.QuadraticBezierCurve3(
+            params.start,
+            params.control,
+            params.end
+        );
+
+        this.timeline.to(this.camera.position, {
+            duration,
+            ease: params.easing || 'power1.inOut',
+            onUpdate: () => {
+                // 현재 진행률 (0~1)
+                const progress = this.timeline.progress();
+                const point = curve.getPoint(progress);
+                this.camera!.position.copy(point);
+                this.camera!.lookAt(this.targetCenter);
+            }
+        });
+
+        return this;
+    }
+
+    /**
+     * 줌 인/아웃 효과 추가
+     */
+    addZoom(params: {
+        zoomRatio: number;  // 줌 비율 (1 = 기본, 2 = 확대)
+        duration?: number;
+        easing?: string;
+    }): this {
+        if (!this.camera) {
+            console.warn('CinematicSequence: 카메라가 설정되지 않았습니다');
+            return this;
+        }
+
+        const currentPos = this.camera.position.clone();
+        const direction = currentPos.clone().sub(this.targetCenter).normalize();
+        const currentDistance = currentPos.distanceTo(this.targetCenter);
+        const targetDistance = currentDistance / params.zoomRatio;
+        const targetPos = this.targetCenter.clone().add(direction.multiplyScalar(targetDistance));
+
+        const duration = (params.duration || 1000) / 1000;
+
+        this.timeline.to(this.camera.position, {
+            x: targetPos.x,
+            y: targetPos.y,
+            z: targetPos.z,
+            duration,
+            ease: params.easing || 'power2.inOut',
+            onUpdate: () => {
+                this.camera!.lookAt(this.targetCenter);
+            }
+        }, '<');
+
+        return this;
+    }
+
+    /**
+     * 하이라이트 효과 추가
+     */
+    addHighlight(params: {
+        node: THREE.Object3D;
+        color?: number;
+        duration?: number;
+    }): this {
+        const duration = (params.duration || 500) / 1000;
+        const color = params.color || 0xffff00;
+
+        // Mesh 재질 애니메이션
+        params.node.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+                const originalMaterial = child.material;
+
+                this.timeline.to((child.material as THREE.MeshStandardMaterial).color, {
+                    r: ((color >> 16) & 255) / 255,
+                    g: ((color >> 8) & 255) / 255,
+                    b: (color & 255) / 255,
+                    duration,
+                    ease: 'power1.out'
+                }, 0);
+
+                // emissive 효과 추가
+                if ('emissive' in child.material) {
+                    this.timeline.to((child.material as THREE.MeshStandardMaterial).emissive, {
+                        r: ((color >> 16) & 255) / 255,
+                        g: ((color >> 8) & 255) / 255,
+                        b: (color & 255) / 255,
+                        duration,
+                        ease: 'power1.out'
+                    }, 0);
+                }
+            }
+        });
+
+        return this;
+    }
+
+    /**
+     * 지연 시간 추가
+     */
+    addDelay(duration: number): this {
+        this.timeline.to({}, { duration: duration / 1000 });
+        return this;
+    }
+
+    /**
+     * 타임라인에 콜백 추가
+     */
+    addCallback(callback: () => void, position: number | string = '+=0'): this {
+        this.timeline.call(callback, undefined, position);
+        return this;
+    }
+
+    /**
+     * 시퀀스 재생 (Promise 반환)
+     */
+    play(): Promise<void> {
+        return new Promise((resolve) => {
+            this.timeline.eventCallback('onComplete', () => {
+                resolve();
+            });
+            this.timeline.play();
+        });
+    }
+
+    /**
+     * 시퀀스 정지
+     */
+    stop(): this {
+        this.timeline.pause();
+        return this;
+    }
+
+    /**
+     * 시퀀스 리셋
+     */
+    reset(): this {
+        this.timeline.restart().pause();
+        return this;
+    }
+
+    /**
+     * 진행률 반환 (0~1)
+     */
+    get progress(): number {
+        return this.timeline.progress();
+    }
 }
 
-// Calculate camera target position based on bounding box
+// ============================================================================
+// 카메라 타겟 위치 계산 유틸리티
+// ============================================================================
+
+/**
+ * 바운딩 박스를 기반으로 카메라 타겟 위치 계산
+ */
 export const calculateCameraTargetPosition = (
     camera: THREE.PerspectiveCamera,
     targetBox: THREE.Box3,
@@ -173,8 +434,8 @@ export const calculateCameraTargetPosition = (
 
     let cameraDistance = Math.abs(diagonal / 2 / Math.tan(fov / 2));
 
-    // Adjust zoom ratio to bring camera closer for better view
-    let zoomRatio = options.zoomRatio || 1.5; // Reduce zoom ratio to get closer
+    // 줌 비율 조절 (객체 크기에 따라 동적 조정)
+    let zoomRatio = options.zoomRatio || 1.5;
     if (diagonal < 5) {
         zoomRatio = options.zoomRatio || 2.0;
     } else if (diagonal > 20) {
@@ -182,47 +443,43 @@ export const calculateCameraTargetPosition = (
     }
     cameraDistance *= zoomRatio;
 
-    // Determine the main face of the target box for front view
+    // 방향 결정
     const size = new THREE.Vector3();
     targetBox.getSize(size);
 
     let direction = options.direction;
 
     if (!direction) {
-        // Find the largest face to determine front direction
         const maxDimension = Math.max(size.x, size.y, size.z);
 
         if (maxDimension === size.x) {
-            // X축이 가장 길 때 -> Z축 정면에서 바라봄
             direction = new THREE.Vector3(0, 0, 1).normalize();
         } else if (maxDimension === size.z) {
-            // Z축이 가장 길 때 -> X축 정면에서 바라봄
             direction = new THREE.Vector3(1, 0, 0).normalize();
         } else {
-            // [수정 포인트] Y축(높이)이 가장 길 때, 기존의 대각선(1, 0, 1) 대신 
-            // 가로 방향인 Z축 정면(0, 0, 1) 혹은 X축 정면(1, 0, 0)으로 고정합니다.
             direction = new THREE.Vector3(0, 0, 1).normalize();
         }
     } else {
-        // Always ensure horizontal direction for front view (Y-axis = 0)
         direction = new THREE.Vector3(direction.x, 0, direction.z).normalize();
     }
 
     const targetPosition = center.clone().add(direction.multiplyScalar(cameraDistance));
-
-    // Ensure camera is at the same height as target center for horizontal view
-    targetPosition.y = center.y;
+    targetPosition.y = center.y; // 동일 높이 유지
 
     return targetPosition;
 };
 
+// ============================================================================
+// 하이라이트 재질 생성 유틸리티
+// ============================================================================
+
 /**
- * 하이라이트용 MeshBasicMaterial을 생성하는 함수
- * @param color 색상 (16진수)
- * @param opacity 투명도 (기본값 0.8)
- * @returns 하이라이트 재질
+ * 하이라이트용 MeshStandardMaterial 생성
  */
-export const createHighlightMaterial = (color: number, opacity: number = 0.8): THREE.MeshStandardMaterial => {
+export const createHighlightMaterial = (
+    color: number,
+    opacity: number = 0.8
+): THREE.MeshStandardMaterial => {
     return new THREE.MeshStandardMaterial({
         color,
         emissive: color,
@@ -232,3 +489,10 @@ export const createHighlightMaterial = (color: number, opacity: number = 0.8): T
         side: THREE.DoubleSide
     });
 };
+
+// ============================================================================
+// GSAP 플러그인 등록 (필요시)
+// ============================================================================
+
+// GSAP 플러그인들이 이미 등록되어 있다면 추가 설정 불필요
+// motionPathPlugin 등은 별도 import 후 gsap.registerPlugin() 필요
