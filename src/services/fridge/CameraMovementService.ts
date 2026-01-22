@@ -113,7 +113,7 @@ export class CameraMovementService {
 
         // [2단계] 최종 위치 설정 (정하단 로우 앵글)
         // 비스듬한 시선을 제거하기 위해 X, Z축 수치를 최소화(0.05)하고 Y축(-1)에 집중하여 노드 바로 아래에 위치시킵니다.
-        const lowAngleDir = new THREE.Vector3(0.05, -1, 0.05).normalize();
+        const lowAngleDir = new THREE.Vector3(-0.21, -0.4, 0.2).normalize();
 
         // 최종 위치 계산: 노드 중심에서 정하단 방향으로 zoomDistance만큼 떨어진 지점
         const finalPos = targetCenter.clone().add(lowAngleDir.clone().multiplyScalar(zoomDistance));
