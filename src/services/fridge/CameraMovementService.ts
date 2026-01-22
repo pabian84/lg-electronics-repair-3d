@@ -62,93 +62,76 @@ export class CameraMovementService {
     }
 
     /**
-     * [LG CNS 최종 개선안] 
-     * 1. Longest Axis Awareness: 객체의 장축에 맞춰 정면/측면 자동 선택
-     * 2. Orthogonal Alignment: 비스듬한 뷰를 제거하고 완전한 수평 정렬 후 접근
-     * 3. Path Visualization: drawCameraPath를 호출하여 이동 궤적을 빨간 선으로 표시
-    */
+     * [LG CNS 개선안] 시네마틱 카메라 워킹
+     * 1) 직선 접근 -> 2) 막바지 급격한 하강(Drop) -> 3) 로우 앵글(Low Angle)
+     */
     public async moveCameraCinematic(nodeName: string): Promise<void> {
-        const targetNode = this.getNodeByName(nodeName);
-        if (!targetNode || !this.sceneRoot) return;
+        console.log('moveCameraCinematic!!!');
 
-        // 0. 타겟 바운딩 박스 및 크기 분석
+        const targetNode = this.getNodeByName(nodeName);
+        console.log('targetNode>> ', targetNode);
+        // 에러 방지: camera-controls는 .camera를 사용하며, 존재 여부를 체크합니다.
+        // if (!targetNode || !this.cameraControls?.camera) return;
+
+        // const camera = this.cameraControls.camera;
+        const camera = this.cameraControls.camera || this.cameraControls.object;
+        console.log('camera>> ', camera);
+        if (!targetNode || !camera) {
+            console.error("Target node or Camera not found");
+            return;
+        }
+
         const targetBox = getPreciseBoundingBox(targetNode);
         const targetCenter = new THREE.Vector3();
         targetBox.getCenter(targetCenter);
         const size = new THREE.Vector3();
         targetBox.getSize(size);
 
-        // [Longest Axis Awareness] 가로(X)와 깊이(Z)를 비교하여 정면/측면 결정
-        const isWide = size.x >= size.z;
-        const horizontalDir = isWide
-            ? new THREE.Vector3(0, 0, 1)  // 가로가 길면 정면(Z축) 주시
-            : new THREE.Vector3(1, 0, 0); // 깊이가 길면 측면(X축) 주시
+        // 1. 목표 지점(End Pos) 설정: 로우 앵글을 위해 부품 중심보다 낮게 설정
+        const fovRad = (camera.fov * Math.PI) / 180;
+        const zoomDistance = (size.y) / Math.tan(fovRad / 2) * 1.5; // 거리는 부품 크기에 맞춰 자동 계산
 
-        // 1단계 목표: 전체 조망 정렬 위치 (Alignment Position)
-        const sceneBox = getPreciseBoundingBox(this.sceneRoot);
-        const sceneSize = new THREE.Vector3();
-        sceneBox.getSize(sceneSize);
-        const safetyDistance = Math.max(sceneSize.x, sceneSize.y, sceneSize.z) * 1.5;
-        const alignPos = targetCenter.clone().add(horizontalDir.clone().multiplyScalar(safetyDistance));
+        // 대상의 정면(Z+)에서 아래쪽(-Y)에 카메라 위치
+        const endPos = targetCenter.clone().add(new THREE.Vector3(0, -size.y * 0.8, zoomDistance));
 
-        // 2단계 목표: 최종 줌인 및 로우 앵글 위치 (Final Position)
-        const diagonal = targetBox.min.distanceTo(targetBox.max);
-        const fovRad = (this.cameraControls.object.fov * Math.PI) / 180;
-        const zoomDistance = (diagonal / 2) / Math.tan(fovRad / 2);
-        const finalPos = targetCenter.clone().add(horizontalDir.clone().multiplyScalar(zoomDistance));
-        finalPos.y -= (size.y * 1.2); // 아래에서 위를 보도록 하강
-
-        // Bezier 제어점: 이동 경로 중간까지는 수평(직선)을 유지하도록 설정
+        // 2. 제어점(Control Point) 설정: '직선 접근 후 낙하'를 위해 목적지 바로 위(고도 유지)에 배치
+        const startPos = camera.position.clone();
         const controlPos = new THREE.Vector3(
-            (alignPos.x + finalPos.x) / 2,
-            targetCenter.y, // 타겟 높이를 유지하여 직선 줌인 느낌 강조
-            (alignPos.z + finalPos.z) / 2
+            endPos.x,      // 목적지와 수평 위치 동일
+            startPos.y,    // 시작 고도 유지 (직선 접근 느낌)
+            endPos.z       // 목적지와 깊이 동일
         );
-
+        console.log('startPos>> ', startPos);
+        console.log('controlPos>> ', controlPos);
+        console.log('endPos>> ', endPos);
+        // 3. 2차 베지에 곡선 생성
+        const cinematicCurve = new THREE.QuadraticBezierCurve3(startPos, controlPos, endPos);
+        console.log('cinematicCurve>> ', cinematicCurve);
         // ---------------------------------------------------------
-        // [시각화] 카메라 궤적 선 그리기
+        // 애니메이션 실행: 비대칭 이징(Quintic) 적용
         // ---------------------------------------------------------
-        const startPos1 = this.cameraControls.object.position.clone();
-        const pathPoints: THREE.Vector3[] = [startPos1];
-        pathPoints.push(alignPos);
-
-        const zoomCurve = new THREE.QuadraticBezierCurve3(alignPos, controlPos, finalPos);
-        pathPoints.push(...zoomCurve.getPoints(50));
-
-        this.drawCameraPath(pathPoints);
-
-        // ---------------------------------------------------------
-        // 애니메이션 실행 (시그니처 수정: target, params, options)
-        // ---------------------------------------------------------
-        const startTarget1 = this.cameraControls.target.clone();
-
-        // Phase 1: 축 정렬
-        await animate(
-            (progress: number, eased: number) => {
-                this.cameraControls.object.position.lerpVectors(startPos1, alignPos, eased);
-                this.cameraControls.target.lerpVectors(startTarget1, targetCenter, eased);
-                this.cameraControls.update();
-            },
-            {}, // [수정됨] params (Function target 사용 시 무시되지만, 인자 순서를 맞추기 위해 필수)
-            { duration: 1000 } // options
-        );
-
-        // Phase 2: 시네마틱 줌인
-        const startTarget2 = this.cameraControls.target.clone();
+        const startTarget = this.cameraControls.target.clone();
         const originalDamping = this.cameraControls.enableDamping;
+        console.log('originalDamping>> ', originalDamping);
         this.cameraControls.enableDamping = false;
 
         await animate(
             (progress: number, eased: number) => {
-                const point = zoomCurve.getPoint(eased);
-                this.cameraControls.object.position.copy(point);
-                this.cameraControls.target.lerpVectors(startTarget2, targetCenter, eased);
+                // progress는 선형(0~1), 여기에 5제곱을 적용하여 후반부에 이동이 몰리도록 함 (Drop 연출)
+                const dropProgress = Math.pow(progress, 5);
+
+                // 곡선을 따라 카메라 위치 이동
+                const point = cinematicCurve.getPoint(dropProgress);
+                camera.position.copy(point);
+
+                // 시선(Target)은 항상 부품의 중심을 고정하여 자연스럽게 올려다보게 함
+                this.cameraControls.target.lerpVectors(startTarget, targetCenter, eased);
                 this.cameraControls.update();
             },
-            {}, // [수정됨] params 위치에 빈 객체 전달
+            {},
             {
                 duration: 2500,
-                easing: (t: number) => t * (2 - t) // EaseOutQuad
+                easing: (t: number) => t // 내부에서 pow(5)를 직접 제어하므로 선형 전달
             }
         );
 
