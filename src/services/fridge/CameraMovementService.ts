@@ -180,9 +180,47 @@ export class CameraMovementService {
             (options.direction || new THREE.Vector3(0, -1, 0)).clone().multiplyScalar(zoomDistance)
         );
 
-        // [중요] 직선 접근을 위한 제어점: 시작점의 높이를 유지하되, 수평 위치는 목적지 위에 고정
-        const controlPos = new THREE.Vector3(endPos.x, startPos.y, endPos.z);
-        const cinematicCurve = new THREE.QuadraticBezierCurve3(startPos, controlPos, endPos);
+        // 안전하게 Bezier 곡선 생성 - 모든 점 검증
+        // 시작점과 끝점이 유효한지 확인
+        if (!startPos || !endPos || !startPos.isVector3 || !endPos.isVector3) {
+            console.error("Invalid camera position or target");
+            camera.position.copy(endPos);
+            this.cameraControls.target.copy(targetCenter);
+            this.cameraControls.update();
+            return;
+        }
+
+        const distSq = startPos.distanceToSquared(endPos);
+        if (distSq < 0.0001) {
+            // 직선 이동 fallback
+            camera.position.copy(endPos);
+            this.cameraControls.target.copy(targetCenter);
+            this.cameraControls.update();
+            return;
+        }
+
+        // [수정] 부드러운 L자형 경로를 위한 제어점 - 완만한 곡선
+        // 시작점의 높이를 유지하되, 목적지와의 거리의 1/2 지점을 제어점으로
+        const controlPos = new THREE.Vector3(
+            (startPos.x + endPos.x) / 2,  // X: 중간 지점
+            Math.max(startPos.y, endPos.y) + Math.max(size.y, maxDim) * 0.3, // Y: 약간 올린 위치
+            (startPos.z + endPos.z) / 2   // Z: 중간 지점
+        );
+
+        // 모든 점이 유효한지 최종 확인
+        if (!controlPos.isVector3) {
+            console.error("Invalid control point");
+            camera.position.copy(endPos);
+            this.cameraControls.target.copy(targetCenter);
+            this.cameraControls.update();
+            return;
+        }
+
+        const cinematicCurve = new THREE.QuadraticBezierCurve3(
+            startPos.clone(),
+            controlPos.clone(),
+            endPos.clone()
+        );
 
         // [수정] 애니메이션 시작 전 UP 벡터 리셋 - Orbit 회전 방지
         camera.up.set(0, 1, 0);
@@ -203,17 +241,18 @@ export class CameraMovementService {
 
         await animate(
             (progress: number, eased: number) => {
-                // 막바지에 더 급격히 떨어지도록 Quintic 이징 적용
-                const dropProgress = Math.pow(progress, 5);
-                const point = cinematicCurve.getPoint(dropProgress);
+                // [수정] 동일한 이징 적용 - 불일치 문제 해결
+                // smoothstep 이징 (3t^2 - 2t^3) 사용 - Quintic보다 부드럽고 자연스러움
+                const smoothProgress = eased; // animate에서 이미 이징된 값 사용
+                const point = cinematicCurve.getPoint(smoothProgress);
 
                 // 카메라 위치 이동
                 camera.position.copy(point);
 
                 /**
-                 * [수정] 단계적 UP 벡터 전환 (자연스러운 로우 앵글 구현)
-                 * - 초기 30%: 기본 UP (0, 1, 0) 사용 - 자연스러운 이동 유지
-                 * - 후반부 70%: 노드 방향으로 서서히 전환 - 카메라가 아래에서 위로 자연스럽게 올려다봄
+                 * [수정] UP 벡터 전환 - 초기에 자연스럽게 전환, 급격한 변화 방지
+                 * - 초기부터 점진적으로 전환하여 마지막 순간 급격한 회전 방지
+                 * - 완전한 직각은 애니메이션 종료 후에만 설정
                  */
                 if (options.direction && Math.abs(options.direction.y) > 0.8 && targetNode) {
                     // 실제 시선 방향 계산 (타겟 중심 - 현재 카메라 위치)
@@ -231,29 +270,18 @@ export class CameraMovementService {
                         calculatedUp.negate();
                     }
 
-                    // [핵심] 진행률에 따른 UP 벡터 보간 (90% 지점에서 시작, 15%만 전환 - 회전 최소화)
-                    // 0.9(90%) 이전에는 기본 UP, 이후에 약 15%만 전환하여 거의 회전하지 않음
-                    const transitionStart = 0.9;
-                    let finalUp;
-                    if (progress < transitionStart) {
-                        // 초기 구간: 기본 UP 사용 (거의 회전 없음)
-                        finalUp = new THREE.Vector3(0, 1, 0);
-                    } else {
-                        // 후반 구간: 약 15%만 전환 - 거의 회전하지 않음
-                        const transitionProgress = (progress - transitionStart) / (1 - transitionStart);
-                        // easeOutQuad로 부드럽지만 약하게 전환
-                        const easeTransition = 1 - Math.pow(1 - transitionProgress, 2);
-                        // 0.15 = 15%만 전환 (거의 원래 상태 유지)
-                        finalUp = new THREE.Vector3(0, 1, 0).lerp(calculatedUp, easeTransition * 0.15);
-                    }
+                    // [핵심] 초기부터 점진적 UP 벡터 전환 (0% ~ 100% 전체 구간)
+                    // 마지막 순간 급격한 회전을 피하고 자연스럽게 전환
+                    const easeTransition = 1 - Math.pow(1 - smoothProgress, 3); // Cubic ease-out
+                    const finalUp = new THREE.Vector3(0, 1, 0).lerp(calculatedUp, easeTransition);
 
                     camera.up.copy(finalUp);
                 } else {
                     camera.up.set(0, 1, 0);
                 }
 
-                // 시선은 타겟 중심에 고정 (lerp를 통해 부드럽게 전환)
-                this.cameraControls.target.lerpVectors(startTarget, targetCenter, eased);
+                // 시선은 타겟 중심에 동일한 이징으로 고정
+                this.cameraControls.target.lerpVectors(startTarget, targetCenter, smoothProgress);
 
                 // camera-controls 라이브러리에 변경사항 반영
                 this.cameraControls.update();
@@ -265,7 +293,8 @@ export class CameraMovementService {
             }
         );
 
-        // [수정] 애니메이션 종료 후 최종 UP 벡터 강제 설정 (완전한 직각 올려다보기)
+        // [수정] 애니메이션 종료 후 최종 UP 벡터 강제 설정
+        // 애니메이션 중에는 자연스럽게 전환하고, 종료 시점에 완전한 로우 앵글 적용
         if (options.direction && Math.abs(options.direction.y) > 0.8 && targetNode) {
             const lookDir = new THREE.Vector3()
                 .subVectors(targetCenter, camera.position)
@@ -279,7 +308,9 @@ export class CameraMovementService {
                 calculatedUp.negate();
             }
 
+            // 종료 시점에 완전한 UP 벡터 적용 (시각적 피드백을 위해)
             camera.up.copy(calculatedUp);
+            this.cameraControls.target.copy(targetCenter); // 타겟도 정확히 중앙으로 설정
             this.cameraControls.update();
         }
 
