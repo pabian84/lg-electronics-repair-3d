@@ -214,6 +214,7 @@ export class CameraMovementService {
                         .normalize();
 
                     // 노드의 로컬 X축(가로 방향)을 월드 좌표로 변환
+                    // const nodeX = new THREE.Vector3(1, 0, 0).applyQuaternion(nodeQuat);
                     const nodeX = new THREE.Vector3(0, 1, 0).applyQuaternion(nodeQuat);
 
                     // UP 벡터 = 노드X × 시선방향 (Cross Product 순서 중요!)
