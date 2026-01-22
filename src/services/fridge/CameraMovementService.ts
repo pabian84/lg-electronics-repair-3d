@@ -184,9 +184,22 @@ export class CameraMovementService {
         const controlPos = new THREE.Vector3(endPos.x, startPos.y, endPos.z);
         const cinematicCurve = new THREE.QuadraticBezierCurve3(startPos, controlPos, endPos);
 
+        // [수정] 애니메이션 시작 전 UP 벡터 리셋 - Orbit 회전 방지
+        camera.up.set(0, 1, 0);
+
         // 2. 애니메이션 실행
         const originalDamping = this.cameraControls.enableDamping;
+        const originalSmoothTime = this.cameraControls.smoothTime;
         this.cameraControls.enableDamping = false; // 보간 충돌 방지를 위해 댐핑 일시 중지
+        this.cameraControls.smoothTime = 0; // smoothTime도 0으로 설정하여 즉시 반응
+
+        // [수정] 노드의 월드 회전 상태를 한 번만 계산 (성능 최적화)
+        const nodeQuat = new THREE.Quaternion();
+        if (targetNode) {
+            targetNode.getWorldQuaternion(nodeQuat);
+        }
+        // 노드의 로컬 Y축을 월드 좌표로 변환 (카메라가 노드를 가로로 보도록 정렬)
+        const nodeY = new THREE.Vector3(0, 1, 0).applyQuaternion(nodeQuat);
 
         await animate(
             (progress: number, eased: number) => {
@@ -198,29 +211,19 @@ export class CameraMovementService {
                 camera.position.copy(point);
 
                 /**
-                 * [핵심] 노드 가로 정렬 해결 (Up Vector 강제)
-                 * 아래에서 위를 볼 때(Y축 이동), 카메라의 머리 방향을 
-                 * 모델의 월드 좌표계나 노드의 회전 상태에 맞춰 조정합니다.
+                 * [수정] 단계적 UP 벡터 전환
+                 * - 초기 80%: 기본 UP (0, 1, 0) 사용 - 자연스러운 이동
+                 * - 후반부 20%: 노드 방향으로 서서히 전환 - 최종 직각 올려다보기
                  */
-                if (options.direction && Math.abs(options.direction.y) > 0.8) {
-                    // [개선] 노드의 월드 회전 상태를 고려한 동적 UP 벡터 계산
-                    // 노드가 항상 화면에서 가로로 보이도록 정확한 UP 벡터를 계산합니다.
-                    const nodeQuat = new THREE.Quaternion();
-                    targetNode.getWorldQuaternion(nodeQuat);
-
+                if (options.direction && Math.abs(options.direction.y) > 0.8 && targetNode) {
                     // 실제 시선 방향 계산 (타겟 중심 - 현재 카메라 위치)
                     const lookDir = new THREE.Vector3()
                         .subVectors(targetCenter, camera.position)
                         .normalize();
 
-                    // 노드의 로컬 X축(가로 방향)을 월드 좌표로 변환
-                    // const nodeX = new THREE.Vector3(1, 0, 0).applyQuaternion(nodeQuat);
-                    const nodeX = new THREE.Vector3(0, 1, 0).applyQuaternion(nodeQuat);
-
-                    // UP 벡터 = 노드X × 시선방향 (Cross Product 순서 중요!)
-                    // 오른손 법칙: 엄지(nodeX) × 검지(lookDir) = 중지(UP)
+                    // UP 벡터 = 노드Y × 시선방향 (Cross Product)
                     let calculatedUp = new THREE.Vector3()
-                        .crossVectors(nodeX, lookDir)
+                        .crossVectors(nodeY, lookDir)
                         .normalize();
 
                     // 방향 검증: UP 벡터가 아래를 향하면 반전
@@ -228,12 +231,22 @@ export class CameraMovementService {
                         calculatedUp.negate();
                     }
 
-                    // 디버깅 로그
-                    console.log(`[DEBUG] Calculated UP Vector:`, calculatedUp);
-                    console.log(`[DEBUG] Look Direction:`, lookDir);
-                    console.log(`[DEBUG] Node X-Axis:`, nodeX);
+                    // [핵심] 진행률에 따른 UP 벡터 보간 (0% ~ 20% 구간에서 전환)
+                    // 0.8(80%) 이전에는 기본 UP, 이후에는 서서히 전환
+                    const transitionStart = 0.8;
+                    let finalUp;
+                    if (progress < transitionStart) {
+                        // 초기 구간: 기본 UP 사용
+                        finalUp = new THREE.Vector3(0, 1, 0);
+                    } else {
+                        // 후반 구간: 노드 정렬 UP으로 서서히 전환
+                        const transitionProgress = (progress - transitionStart) / (1 - transitionStart);
+                        // easeOutQuad로 부드러운 전환
+                        const easeTransition = 1 - Math.pow(1 - transitionProgress, 2);
+                        finalUp = new THREE.Vector3(0, 1, 0).lerp(calculatedUp, easeTransition);
+                    }
 
-                    camera.up.copy(calculatedUp);
+                    camera.up.copy(finalUp);
                 } else {
                     camera.up.set(0, 1, 0);
                 }
@@ -251,7 +264,26 @@ export class CameraMovementService {
             }
         );
 
+        // [수정] 애니메이션 종료 후 최종 UP 벡터 강제 설정 (완전한 직각 올려다보기)
+        if (options.direction && Math.abs(options.direction.y) > 0.8 && targetNode) {
+            const lookDir = new THREE.Vector3()
+                .subVectors(targetCenter, camera.position)
+                .normalize();
+
+            let calculatedUp = new THREE.Vector3()
+                .crossVectors(nodeY, lookDir)
+                .normalize();
+
+            if (calculatedUp.y < 0) {
+                calculatedUp.negate();
+            }
+
+            camera.up.copy(calculatedUp);
+            this.cameraControls.update();
+        }
+
         this.cameraControls.enableDamping = originalDamping;
+        this.cameraControls.smoothTime = originalSmoothTime;
     }
 
     /**
