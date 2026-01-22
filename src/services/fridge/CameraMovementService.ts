@@ -203,18 +203,34 @@ export class CameraMovementService {
                  * 모델의 월드 좌표계나 노드의 회전 상태에 맞춰 조정합니다.
                  */
                 if (options.direction && Math.abs(options.direction.y) > 0.8) {
-                    // [개선] 노드의 월드 X축을 기준으로 카메라의 UP 벡터를 설정하여 
-                    // 노드가 항상 화면에서 가로로 보이도록 합니다.
+                    // [개선] 노드의 월드 회전 상태를 고려한 동적 UP 벡터 계산
+                    // 노드가 항상 화면에서 가로로 보이도록 정확한 UP 벡터를 계산합니다.
                     const nodeQuat = new THREE.Quaternion();
                     targetNode.getWorldQuaternion(nodeQuat);
 
-                    // 노드의 로컬 X축(가로축)을 월드 좌표로 변환
-                    const nodeX = new THREE.Vector3(1, 0, 0).applyQuaternion(nodeQuat);
+                    // 실제 시선 방향 계산 (타겟 중심 - 현재 카메라 위치)
+                    const lookDir = new THREE.Vector3()
+                        .subVectors(targetCenter, camera.position)
+                        .normalize();
 
-                    // 카메라의 시선 방향(아래->위)과 노드의 가로축에 수직인 벡터를 UP으로 설정
-                    // 시선 방향이 (0, 1, 0) 근처이므로, UP = Look x NodeX
-                    const lookDir = new THREE.Vector3(0, 1, 0); // 대략적인 시선 방향
-                    const calculatedUp = new THREE.Vector3().crossVectors(lookDir, nodeX).normalize();
+                    // 노드의 로컬 X축(가로 방향)을 월드 좌표로 변환
+                    const nodeX = new THREE.Vector3(0, 1, 0).applyQuaternion(nodeQuat);
+
+                    // UP 벡터 = 노드X × 시선방향 (Cross Product 순서 중요!)
+                    // 오른손 법칙: 엄지(nodeX) × 검지(lookDir) = 중지(UP)
+                    let calculatedUp = new THREE.Vector3()
+                        .crossVectors(nodeX, lookDir)
+                        .normalize();
+
+                    // 방향 검증: UP 벡터가 아래를 향하면 반전
+                    if (calculatedUp.y < 0) {
+                        calculatedUp.negate();
+                    }
+
+                    // 디버깅 로그
+                    console.log(`[DEBUG] Calculated UP Vector:`, calculatedUp);
+                    console.log(`[DEBUG] Look Direction:`, lookDir);
+                    console.log(`[DEBUG] Node X-Axis:`, nodeX);
 
                     camera.up.copy(calculatedUp);
                 } else {
