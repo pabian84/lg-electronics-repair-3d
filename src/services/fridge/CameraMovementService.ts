@@ -116,24 +116,20 @@ export class CameraMovementService {
         const startPos2 = this.cameraControls.object.position.clone();
         const startTarget2 = this.cameraControls.target.clone();
 
-        // [핵심 수정] 제어점(Control Point)의 하강폭을 diagonal * 0.5에서 1.5로 대폭 강화하여 깊은 포물선 유도
+        // 1. 제어점(Control Point) 하강폭 계수를 상향하여 더 급격한 곡선 유도
         const controlPos = new THREE.Vector3(
             (startPos2.x + finalPos.x) / 2,
-            Math.min(startPos2.y, finalPos.y) - (diagonal * 1.5), // <--- 깊이(Depth) 강화
+            Math.min(startPos2.y, finalPos.y) - (diagonal * 40), // <--- 곡률 강화
             (startPos2.z + finalPos.z) / 2
         );
 
+        // 2. [중요] 이동에 사용하는 곡선을 시각화와 동일하게 또는 정밀하게 맞춤
         const curve = new THREE.QuadraticBezierCurve3(startPos2, controlPos, finalPos);
 
-        // [디버깅] 1~4단계 핵심 포인트 추출
-        const pathPoints = [
-            this.cameraControls.object.position.clone(),
-            alignPos.clone(),
-            controlPos.clone(),
-            finalPos.clone()
-        ];
-
-        this.drawCameraPath(pathPoints);
+        // [수정] 3. 시각화 데이터와 실제 이동 경로의 완전한 동기화
+        // drawCameraPath에 들어가는 pathPoints도 Bezier 곡선에서 샘플링한 포인트를 전달해야 일치함
+        const visualPoints = curve.getPoints(50);
+        this.drawCameraPath(visualPoints);
 
         // 문제 원인: Controls의 Damping(관성)이 프레임별 위치 강제 할당을 방해하여 곡선 궤적을 이탈함.
         // 해결 방안: 시네마틱 이동 구간 동안만 Damping을 비활성화(False)하여 궤적 정밀 추적 보장.
@@ -148,18 +144,22 @@ export class CameraMovementService {
 
         // 애니메이션 실행
         await animate((progress: number, eased: number) => {
-            // Bezier 곡선 위의 정확한 좌표 추출
+            // Bezier 곡선 위의 정확한 좌표를 프레임 단위로 강제 주입
             const point = curve.getPoint(eased);
-            console.log('point>> ', point);
-            // 카메라 위치 강제 동기화 (Damping이 꺼져 있어 정확한 위치로 이동)
+
+            // 카메라 위치 강제 설정
             this.cameraControls.object.position.copy(point);
 
-            // [3단계] 타겟 주시 유지
-            this.cameraControls.target.copy(targetCenter);
+            // [개선] 타겟(주시점)도 고정이 아닌, 시작 타겟에서 최종 타겟으로 부드럽게 보간(Lerp)
+            // 위치는 곡선을 타되, 시선은 부드럽게 회전해야 선형적인 느낌이 사라짐
+            this.cameraControls.target.lerpVectors(startTarget2, targetCenter, eased);
 
-            // Controls 업데이트 (위치/타겟 변경 사항 반영)
+            // Damping이 비활성화된 상태에서 정밀 업데이트
             this.cameraControls.update();
-        }, { duration: 5000 });
+        }, {
+            duration: 5000,
+            easing: (t) => t * (2 - t) // EaseOut 효과로 도착 시 감속 강화
+        });
 
         // 3. 애니메이션 종료 후 Damping 설정 원복 (사용자 제어감 복구)
         if (this.cameraControls.hasOwnProperty('enableDamping')) {
@@ -185,39 +185,6 @@ export class CameraMovementService {
         await this.moveCameraToNode("Hinge_Assembly", { duration: 1000, zoomRatio: 1.2 });
     }
 
-    // Smooth camera movement with duration (Promise-based)
-    private async smoothCameraMovement(
-        targetPosition: THREE.Vector3,
-        targetLookAt: THREE.Vector3,
-        options: CameraMoveOptions
-    ): Promise<void> {
-        const duration = options.duration || 1000; // Default 1 second
-        const startPosition = this.cameraControls.object.position.clone();
-        const startTarget = this.cameraControls.target.clone();
-
-        await animate((progress: number, eased: number) => {
-            // Interpolate between start and target position with horizontal movement and slight downward angle
-            const currentPosition = new THREE.Vector3(
-                startPosition.x + (targetPosition.x - startPosition.x) * eased,
-                targetPosition.y - 1.5, // Move camera slightly below target for upward view
-                startPosition.z + (targetPosition.z - startPosition.z) * eased
-            );
-            this.cameraControls.object.position.copy(currentPosition);
-
-            // Interpolate between start and target look at position
-            const currentLookAt = startTarget.clone().lerp(targetLookAt, eased);
-            this.cameraControls.target.copy(currentLookAt);
-
-            // Update controls
-            this.cameraControls.update();
-
-            // Call progress callback
-            if (options.onProgress) {
-                options.onProgress(eased);
-            }
-        }, { duration });
-    }
-
     // Find a node by name in the scene (with caching)
     private getNodeByName(nodeName: string): THREE.Object3D | null {
         if (!this.sceneRoot) {
@@ -228,14 +195,6 @@ export class CameraMovementService {
         return this.nodeCache.findNodeByName(this.sceneRoot, nodeName);
     }
 
-    // Calculate the target position for the camera using bounding box
-    private calculateTargetPosition(node: any, options: CameraMoveOptions): THREE.Vector3 {
-        const targetBox = getPreciseBoundingBox(node);
-        return calculateCameraTargetPosition(this.cameraControls.object, targetBox, {
-            zoomRatio: options.zoomRatio,
-            direction: options.direction
-        });
-    }
 
     // Default camera movement parameters
     private static readonly DEFAULT_DAMPER_DURATION = 1000;
