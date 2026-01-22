@@ -1,7 +1,8 @@
 import { LEFT_DOOR_DAMPER_NODE_NAME } from '../../shared/utils/fridgeConstants';
 import * as THREE from 'three';
 import { getPreciseBoundingBox } from '../../shared/utils/commonUtils';
-import { animate, calculateCameraTargetPosition, NodeCache } from '../../shared/utils/animationUtils';
+// import { animate, calculateCameraTargetPosition, NodeCache } from '../../shared/utils/animationUtils';
+import { animate, calculateCameraTargetPosition, NodeCache, createHighlightMaterial } from '../../shared/utils/animationUtils';
 
 // Camera movement options
 export interface CameraMoveOptions {
@@ -61,6 +62,58 @@ export class CameraMovementService {
         }, 10000); */
     }
 
+    /**
+     * 특정 노드와 그 자식 메쉬들을 하이라이트 처리합니다.
+     * @param nodeName 하이라이트할 노드 이름
+     * @param color 하이라이트 색상 (기본값: 노란색 0xffff00)
+     */
+    public applyHighlight(nodeName: string, color: number = 0xffff00): void {
+        const targetNode = this.getNodeByName(nodeName);
+        if (!targetNode) {
+            console.warn(`Highlight failed: Node "${nodeName}" not found.`);
+            return;
+        }
+
+        console.log('Applying highlight to node:', targetNode.name);
+        console.log('Node children count:', targetNode.children.length);
+
+        // 유틸리티 함수를 사용하여 하이라이트용 재질 생성
+        const highlightMat = createHighlightMaterial(color);
+
+        let meshCount = 0;
+        targetNode.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+                meshCount++;
+                console.log('Found mesh:', child.name);
+                // 나중에 원래대로 복구하기 위해 기존 재질을 userData에 저장
+                if (!child.userData.originalMaterial) {
+                    child.userData.originalMaterial = child.material;
+                }
+                child.material = highlightMat;
+            }
+        });
+
+        console.log(`Applied highlight to ${meshCount} meshes`);
+    }
+
+    /**
+     * 노드에 적용된 하이라이트를 제거하고 원래 재질로 복구합니다.
+     * @param nodeName 복구할 노드 이름
+     */
+    public resetHighlight(nodeName: string): void {
+        const targetNode = this.getNodeByName(nodeName);
+        if (!targetNode) return;
+
+        targetNode.traverse((child) => {
+            if (child instanceof THREE.Mesh && child.userData.originalMaterial) {
+                // 저장해둔 원본 재질로 복구
+                child.material = child.userData.originalMaterial;
+                // 관리용 데이터 삭제
+                delete child.userData.originalMaterial;
+            }
+        });
+    }
+
     public async moveCameraToUpwardView(nodeName: string, options: CameraMoveOptions = {}): Promise<void> {
         // X를 0으로 설정하여 노드가 가로로 바르게 정렬되도록 하고, 
         // Z를 아주 미세하게(0.01) 주어 완전 수직 시의 짐벌락(Gimbal Lock) 현상을 방지합니다.
@@ -99,64 +152,59 @@ export class CameraMovementService {
         const size = new THREE.Vector3();
         targetBox.getSize(size);
 
-        // moveCameraCinematic 함수 내부 1번 항목(End Pos 설정) 수정
-        const fovRad = (camera.fov * Math.PI) / 180;
+        // 2. 제어점(Control Point) 설정: '직선 접근 후 낙하'를 위해 목적지 바로 위(고도 유지)에 배치
+        const startPos = camera.position.clone();
+        const startTarget = this.cameraControls.target.clone();
 
-        // [개선] 객체의 전체 크기(Max Dimension)를 기준으로 거리를 계산하여 정중앙 배치 보장
+        // 1. 목표 지점(End Pos) 및 제어점(Control Pos) 재설정
+        const fovRad = (camera.fov * Math.PI) / 180;
         const maxDim = Math.max(size.x, size.y, size.z);
         const zoomDistance = (maxDim / 2) / Math.tan(fovRad / 2) * (options.zoomRatio || 1.2);
 
-        let endPos: THREE.Vector3;
-
-        console.log('options>> ', options);
-        if (options.direction) {
-            console.log('options.direction>> ', options.direction);
-            // 방향 벡터를 타겟 중심에 더해 카메라의 최종 목적지 계산 (options 전달이 되어야 작동함)
-            endPos = targetCenter.clone().add(options.direction.clone().multiplyScalar(zoomDistance));
-        } else {
-            console.log('bbb');
-            // 기본값: 타겟과 X축을 일치시켜 가로 정렬 유지
-            endPos = targetCenter.clone().add(new THREE.Vector3(0, -size.y * 0.5, zoomDistance));
-        }
-
-        // 2. 제어점(Control Point) 설정: '직선 접근 후 낙하'를 위해 목적지 바로 위(고도 유지)에 배치
-        const startPos = camera.position.clone();
-        const controlPos = new THREE.Vector3(
-            endPos.x,      // 목적지와 수평 위치 동일
-            startPos.y,    // 시작 고도 유지 (직선 접근 느낌)
-            endPos.z       // 목적지와 깊이 동일
+        // 목적지 계산: options.direction(0, -1, 0.01) 반영
+        const endPos = targetCenter.clone().add(
+            (options.direction || new THREE.Vector3(0, -1, 0.5)).clone().multiplyScalar(zoomDistance)
         );
-        console.log('startPos>> ', startPos);
-        console.log('controlPos>> ', controlPos);
-        console.log('endPos>> ', endPos);
-        // 3. 2차 베지에 곡선 생성
+
+        // [중요] 직선 접근을 위한 제어점: 시작점의 높이를 유지하되, 수평 위치는 목적지 위에 고정
+        const controlPos = new THREE.Vector3(endPos.x, startPos.y, endPos.z);
         const cinematicCurve = new THREE.QuadraticBezierCurve3(startPos, controlPos, endPos);
-        console.log('cinematicCurve>> ', cinematicCurve);
-        // ---------------------------------------------------------
-        // 애니메이션 실행: 비대칭 이징(Quintic) 적용
-        // ---------------------------------------------------------
-        const startTarget = this.cameraControls.target.clone();
+
+        // 2. 애니메이션 실행
         const originalDamping = this.cameraControls.enableDamping;
-        console.log('originalDamping>> ', originalDamping);
-        this.cameraControls.enableDamping = false;
+        this.cameraControls.enableDamping = false; // 보간 충돌 방지를 위해 댐핑 일시 중지
 
         await animate(
             (progress: number, eased: number) => {
-                // progress는 선형(0~1), 여기에 5제곱을 적용하여 후반부에 이동이 몰리도록 함 (Drop 연출)
+                // 막바지에 더 급격히 떨어지도록 Quintic 이징 적용
                 const dropProgress = Math.pow(progress, 5);
-
-                // 곡선을 따라 카메라 위치 이동
                 const point = cinematicCurve.getPoint(dropProgress);
+
+                // 카메라 위치 이동
                 camera.position.copy(point);
 
-                // 시선(Target)은 항상 부품의 중심을 고정하여 자연스럽게 올려다보게 함
+                /**
+                 * [핵심] 노드 가로 정렬 해결 (Up Vector 강제)
+                 * 아래에서 위를 볼 때(Y축 이동), 카메라의 머리 방향을 
+                 * 모델의 뒤쪽(Z축)으로 고정하여 부품이 화면에서 수평으로 보이게 합니다.
+                 */
+                if (options.direction && Math.abs(options.direction.y) > 0.8) {
+                    // 시선 방향에 따라 up 벡터를 (0, 0, -1)로 고정하여 화면 기울어짐 방지
+                    camera.up.set(0, 0, -1);
+                } else {
+                    camera.up.set(0, 1, 0);
+                }
+
+                // 시선은 타겟 중심에 고정 (lerp를 통해 부드럽게 전환)
                 this.cameraControls.target.lerpVectors(startTarget, targetCenter, eased);
+
+                // camera-controls 라이브러리에 변경사항 반영
                 this.cameraControls.update();
             },
             {},
             {
-                duration: 2500,
-                easing: (t: number) => t // 내부에서 pow(5)를 직접 제어하므로 선형 전달
+                duration: options.duration || 2500,
+                easing: (t: number) => t // 내부에서 dropProgress로 직접 조절하므로 linear 유지
             }
         );
 
@@ -201,5 +249,7 @@ export class CameraMovementService {
             duration: options.duration || 1000,
             ...options
         });
+        // 대상 노드를 하이라이트 처리
+        this.applyHighlight(LEFT_DOOR_DAMPER_NODE_NAME);
     }
 }

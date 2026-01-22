@@ -214,3 +214,20 @@ export const calculateCameraTargetPosition = (
 
     return targetPosition;
 };
+
+/**
+ * 하이라이트용 MeshBasicMaterial을 생성하는 함수
+ * @param color 색상 (16진수)
+ * @param opacity 투명도 (기본값 0.8)
+ * @returns 하이라이트 재질
+ */
+export const createHighlightMaterial = (color: number, opacity: number = 0.8): THREE.MeshStandardMaterial => {
+    return new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 0.5,
+        transparent: true,
+        opacity,
+        side: THREE.DoubleSide
+    });
+};
