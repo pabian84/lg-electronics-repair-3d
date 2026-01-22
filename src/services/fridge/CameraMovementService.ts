@@ -107,68 +107,61 @@ export class CameraMovementService {
         const diagonal = targetBox.min.distanceTo(targetBox.max);
         const fovRad = (this.cameraControls.object.fov * Math.PI) / 180;
         let zoomDistance = (diagonal / 2) / Math.tan(fovRad / 2);
-        zoomDistance *= 1.3; // 여유 계수
 
-        // [2단계] 최종 위치 설정 (로우 앵글)
-        // 1. 방향 벡터 수정: 정면(Z)과 측면(X)뿐만 아니라 아래에서 위를 보는 방향(Y)을 정의합니다.
-        // const lowAngleDir = new THREE.Vector3(1, -0.6, 1).normalize(); // Y값을 마이너스로 설정하여 아래쪽 배치
-        const lowAngleDir = new THREE.Vector3(3, -3, 3).normalize(); // Y값을 마이너스로 설정하여 아래쪽 배치
+        // [개선] 여유 계수를 1.0으로 조정하여 노드가 화면에 꽉 차게 배치 (웅장함 강조)
+        zoomDistance *= 1.0;
 
-        // 2. 최종 위치 계산: 계산된 lowAngleDir 방향으로 zoomDistance만큼 이동
+        // [2단계] 최종 위치 설정 (정하단 로우 앵글)
+        // 비스듬한 시선을 제거하기 위해 X, Z축 수치를 최소화(0.05)하고 Y축(-1)에 집중하여 노드 바로 아래에 위치시킵니다.
+        const lowAngleDir = new THREE.Vector3(0.05, -1, 0.05).normalize();
+
+        // 최종 위치 계산: 노드 중심에서 정하단 방향으로 zoomDistance만큼 떨어진 지점
         const finalPos = targetCenter.clone().add(lowAngleDir.clone().multiplyScalar(zoomDistance));
 
-        // 3. 웅장함 극대화: 타겟의 크기에 비례하여 Y축 높이를 추가적으로 낮춤
-        finalPos.y -= (diagonal * 3.0); // 기존 0.4에서 0.8로 하강폭 증대
+        // 하강폭 오프셋: 노드가 화면 중앙에 유지되도록 최소한의 보정값만 적용합니다.
+        // (이 값이 너무 크면 노드가 화면 상단으로 치우치게 됩니다.)
+        finalPos.y -= (diagonal * 1.5);
 
+        // 2단계 시작 시점의 카메라 상태 캡처
         const startPos2 = this.cameraControls.object.position.clone();
         const startTarget2 = this.cameraControls.target.clone();
 
-        // 1. 제어점(Control Point) 하강폭 계수를 상향하여 더 급격한 곡선 유도
+        // [3단계] 제어점(Control Point) 설정: '하강폭을 높여' 웅장하게 아래로 훑고 지나가는 궤적 생성
         const controlPos = new THREE.Vector3(
             (startPos2.x + finalPos.x) / 2,
-            Math.min(startPos2.y, finalPos.y) - (diagonal * 40), // <--- 곡률 강화
+            Math.min(startPos2.y, finalPos.y) - (diagonal * 3.5), // <--- 곡률을 깊게 주어 웅장한 접근 연출
             (startPos2.z + finalPos.z) / 2
         );
 
-        // 2. [중요] 이동에 사용하는 곡선을 시각화와 동일하게 또는 정밀하게 맞춤
+        // 궤적 곡선 생성 (Bezier)
         const curve = new THREE.QuadraticBezierCurve3(startPos2, controlPos, finalPos);
 
-        // [수정] 3. 시각화 데이터와 실제 이동 경로의 완전한 동기화
-        // drawCameraPath에 들어가는 pathPoints도 Bezier 곡선에서 샘플링한 포인트를 전달해야 일치함
+        // 시각화 경로 업데이트
         const visualPoints = curve.getPoints(50);
         this.drawCameraPath(visualPoints);
 
-        // 문제 원인: Controls의 Damping(관성)이 프레임별 위치 강제 할당을 방해하여 곡선 궤적을 이탈함.
-        // 해결 방안: 시네마틱 이동 구간 동안만 Damping을 비활성화(False)하여 궤적 정밀 추적 보장.
-
-        // 1. 기존 Damping 설정 저장 (OrbitControls 기준 'enableDamping', 일부 라이브러리는 'dampingEnabled'일 수 있음)
+        // Damping(관성) 비활성화: 곡선 궤적을 오차 없이 따라가도록 설정
         const originalDamping = this.cameraControls.enableDamping;
-
-        // 2. Damping 비활성화: 입력된 좌표 그대로 렌더링하도록 설정
         if (this.cameraControls.hasOwnProperty('enableDamping')) {
             this.cameraControls.enableDamping = false;
         }
 
         // 애니메이션 실행
         await animate((progress: number, eased: number) => {
-            // Bezier 곡선 위의 정확한 좌표를 프레임 단위로 강제 주입
+            // Bezier 곡선 위의 좌표를 카메라 위치로 강제 주입
             const point = curve.getPoint(eased);
-
-            // 카메라 위치 강제 설정
             this.cameraControls.object.position.copy(point);
 
-            // [개선] 타겟(주시점)도 고정이 아닌, 시작 타겟에서 최종 타겟으로 부드럽게 보간(Lerp)
-            // 위치는 곡선을 타되, 시선은 부드럽게 회전해야 선형적인 느낌이 사라짐
+            // [핵심] 타겟(주시점)을 노드 중심(targetCenter)으로 부드럽게 고정하여 중앙 정렬 보장
             this.cameraControls.target.lerpVectors(startTarget2, targetCenter, eased);
 
-            // Damping이 비활성화된 상태에서 정밀 업데이트
             this.cameraControls.update();
         }, {
-            duration: 5000,
-            easing: (t) => t * (2 - t) // EaseOut 효과로 도착 시 감속 강화
+            duration: 5000, // 웅장함을 느끼기에 충분한 시간
+            easing: (t) => t * (2 - t) // 도착 시 부드럽게 감속
         });
 
-        // 3. 애니메이션 종료 후 Damping 설정 원복 (사용자 제어감 복구)
+        // 애니메이션 종료 후 Damping 복구
         if (this.cameraControls.hasOwnProperty('enableDamping')) {
             this.cameraControls.enableDamping = originalDamping;
             this.cameraControls.update();
