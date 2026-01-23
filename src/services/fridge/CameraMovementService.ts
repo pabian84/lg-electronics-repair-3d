@@ -372,9 +372,8 @@ export class CameraMovementService {
         });
     }
 
-    /**
- * 줌 효과 및 일관된 화면 배치 (왼쪽 출력)
- */
+    // CameraMovementService.ts
+
     public async zoomTo(
         zoomRatio: number,
         options: CameraMoveOptions = {}
@@ -382,27 +381,49 @@ export class CameraMovementService {
         const camera = this.cameraControls.camera || this.cameraControls.object;
         if (!camera) return;
 
+        // [필수] 애니메이션 시작 전 최신 월드 행렬 강제 업데이트
+        this.sceneRoot?.updateMatrixWorld(true);
         const targetBox = getPreciseBoundingBox(this.sceneRoot!);
         const targetCenter = new THREE.Vector3();
         targetBox.getCenter(targetCenter);
 
-        // [수정 1] 고정된 시점(Direction) 정의
-        // 매번 다른 각도가 아닌, 특정 방향(예: 정면 우측 상단 45도)에서 바라보도록 고정합니다.
         const fixedDirection = options.direction || new THREE.Vector3(1, 0.5, 1).normalize();
-
         const currentDistance = camera.position.distanceTo(targetCenter);
         const targetDistance = currentDistance / zoomRatio;
 
-        // [수정 2] 타겟 위치(Camera Position) 계산
-        const targetPos = targetCenter.clone().add(fixedDirection.multiplyScalar(targetDistance));
+        // [개선] 현재 카메라의 방향이 아닌, '고정된 시점' 기준의 오른쪽 벡터 계산
+        // 월드 Up(0, 1, 0)과 fixedDirection을 외적하여 항상 일관된 가로 오프셋 방향 산출
+        const worldUp = new THREE.Vector3(0, 1, 0);
+        const sideVector = new THREE.Vector3().crossVectors(fixedDirection, worldUp).normalize();
 
-        // [수정 3] 화면 왼쪽 배치를 위한 타겟 오프셋(Target Offset) 적용
-        // 카메라가 객체의 정중앙이 아닌, 오른쪽의 빈 공간을 바라보게 하여 객체를 왼쪽으로 밉니다.
-        // 0.5 값은 현장 모델 크기에 맞춰 조정하십시오.
-        const screenOffset = new THREE.Vector3(0.5, 0, 0);
-        const adjustedTarget = targetCenter.clone().add(screenOffset);
+        // 객체를 화면 왼쪽에 두기 위해 타겟(시선)을 오른쪽으로 이동 (값은 바운딩 박스 크기에 비례 권장)
+        const boxSize = new THREE.Vector3();
+        targetBox.getSize(boxSize);
+        const horizontalOffset = sideVector.multiplyScalar(boxSize.x * 0.5);
 
-        // moveTo 호출 시 수정된 targetPos와 adjustedTarget을 전달합니다.
-        return this.moveTo(targetPos, adjustedTarget, options);
+        const finalTarget = targetCenter.clone().add(horizontalOffset);
+        const targetPos = finalTarget.clone().add(fixedDirection.clone().multiplyScalar(targetDistance));
+
+        // GSAP 실행 전 Damping 일시 정지
+        const originalDamping = this.cameraControls.enableDamping;
+        this.cameraControls.enableDamping = false;
+
+        return new Promise((resolve) => {
+            gsap.to(camera.position, {
+                x: targetPos.x,
+                y: targetPos.y,
+                z: targetPos.z,
+                duration: (options.duration || 1000) / 1000,
+                ease: options.easing || 'power3.inOut',
+                onUpdate: () => {
+                    this.cameraControls.target.copy(finalTarget);
+                    this.cameraControls.update();
+                },
+                onComplete: () => {
+                    this.cameraControls.enableDamping = originalDamping;
+                    resolve();
+                }
+            });
+        });
     }
 }

@@ -50,13 +50,11 @@ export const animate = (
             ...numericParams,
             duration: duration / 1000, // ms → seconds 변환
             ease: easing,
-            onUpdate: () => {
+            onUpdate: function () {
                 options.onUpdate?.();
                 if (options.onProgress) {
                     // 진행률 계산 (GSAP의 progress 사용)
-                    const progress = (gsap.getProperty(target, 'x') as number) !== undefined
-                        ? (gsap.getProperty(target, 'x') as number)
-                        : 0;
+                    const progress = this.progress();
                     options.onProgress(progress);
                 }
             },
@@ -113,7 +111,7 @@ const applyEasing = (t: number, easing: string): number => {
         case 'power3.in': return t * t * t * t;
         case 'power3.out': return 1 - Math.pow(1 - t, 4);
         case 'power3.inOut': return t < 0.5 ? 4 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2;
-        case 'back.in': return 1.70158 * t * t * t - t * t * t;
+        case 'back.in': return t * t * t * (t * (1.70158 * t - 1.70158) + 1);
         case 'back.out': return 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2);
         case 'back.inOut': {
             const s = 1.70158 * 1.525;
@@ -272,12 +270,12 @@ export class CinematicSequence {
             params.end
         );
 
-        this.timeline.to(this.camera.position, {
+        this.timeline.to({}, {
             duration,
             ease: params.easing || 'power1.inOut',
-            onUpdate: () => {
+            onUpdate: function () {
                 // 현재 진행률 (0~1)
-                const progress = this.timeline.progress();
+                const progress = this.progress();
                 const point = curve.getPoint(progress);
                 this.camera!.position.copy(point);
                 this.camera!.lookAt(this.targetCenter);
@@ -443,7 +441,7 @@ export const calculateCameraTargetPosition = (
     }
     cameraDistance *= zoomRatio;
 
-    // 방향 결정
+    // 방향 결정 (장축 인지 기반 자동 뷰포트 정렬)
     const size = new THREE.Vector3();
     targetBox.getSize(size);
 
@@ -453,18 +451,19 @@ export const calculateCameraTargetPosition = (
         const maxDimension = Math.max(size.x, size.y, size.z);
 
         if (maxDimension === size.x) {
-            direction = new THREE.Vector3(0, 0, 1).normalize();
+            direction = new THREE.Vector3(1, 0.2, 0.5).normalize(); // X축 장축 → 우측 상단에서 보기
         } else if (maxDimension === size.z) {
-            direction = new THREE.Vector3(1, 0, 0).normalize();
+            direction = new THREE.Vector3(0.5, 0.2, 1).normalize(); // Z축 장축 → 전면 상단에서 보기
         } else {
-            direction = new THREE.Vector3(0, 0, 1).normalize();
+            direction = new THREE.Vector3(0.5, 1, 0.5).normalize(); // Y축 장축 → 위에서 보기
         }
     } else {
-        direction = new THREE.Vector3(direction.x, 0, direction.z).normalize();
+        direction = new THREE.Vector3(direction.x, direction.y || 0.2, direction.z).normalize(); // Y축 기본값 0.2로 설정 (약간 아래에서 보기)
     }
 
     const targetPosition = center.clone().add(direction.multiplyScalar(cameraDistance));
-    targetPosition.y = center.y; // 동일 높이 유지
+    // Y축 위치 조정: 대상의 중심보다 약간 높게 위치시켜 더 자연스러운 시점 제공
+    targetPosition.y = center.y + (size.y * 0.1);
 
     return targetPosition;
 };
