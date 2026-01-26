@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import gsap from 'gsap';
 import { CoordinateTransformUtils } from '../../shared/utils/CoordinateTransformUtils';
 import { SnapDetectionUtils } from '../../shared/utils/SnapDetectionUtils';
+import { getPreciseBoundingBox } from '../../shared/utils/commonUtils';
 
 /**
  * 조립 애니메이션 옵션 인터페이스
@@ -29,10 +30,55 @@ export class PartAssemblyService {
         this.sceneRoot = sceneRoot;
     }
 
-    /**
- * PartAssemblyService.ts 추가/수정 부분
- */
+    public async animateLinearAssembly(
+        sourceNodeName: string,
+        targetNodeName: string,
+        duration: number = 1.5
+    ): Promise<void> {
+        console.log('animateLinearAssembly>> ', sourceNodeName, targetNodeName);
+        const sourceNode = this.sceneRoot.getObjectByName(sourceNodeName);
+        const targetNode = this.sceneRoot.getObjectByName(targetNodeName);
 
+        if (!sourceNode || !targetNode) {
+            console.error('노드를 찾을 수 없습니다.');
+            return;
+        }
+
+        // 1. 대상 노드(홈)의 월드 좌표 중심점 계산
+        const targetBox = getPreciseBoundingBox(targetNode);
+        const targetWorldPos = new THREE.Vector3();
+        targetBox.getCenter(targetWorldPos);
+
+        // 2. 월드 좌표를 소스 노드의 부모 기준 로컬 좌표로 변환
+        // (소스 노드가 어떤 계층에 있더라도 정확한 위치로 이동하기 위함)
+        const targetLocalPos = sourceNode.parent
+            ? sourceNode.parent.worldToLocal(targetWorldPos.clone())
+            : targetWorldPos;
+
+        // 3. GSAP를 이용한 선형 이동 애니메이션 실행
+        return new Promise((resolve) => {
+            gsap.to(sourceNode.position, {
+                x: targetLocalPos.x,
+                y: targetLocalPos.y,
+                z: targetLocalPos.z,
+                duration: duration,
+                ease: "power2.inOut", // 자연스러운 시작과 끝을 위한 이징
+                onStart: () => {
+                    this.isAnimating = true;
+                    console.log(`[Assembly] ${sourceNodeName} 조립 시작`);
+                },
+                onComplete: () => {
+                    this.isAnimating = false;
+                    console.log(`[Assembly] ${sourceNodeName} 조립 완료`);
+                    resolve();
+                }
+            });
+        });
+    }
+
+    /**
+     * PartAssemblyService.ts 추가/수정 부분
+     */
     // 1. 수동 조립 준비 (타임라인만 생성하고 일시정지)
     public prepareManualAssembly(
         sourceNodeName: string,

@@ -789,7 +789,7 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
                     disabled={isAssemblyPlaying}
                     style={{ marginLeft: '8px' }}
                   >
-                    {isAssemblyPlaying ? '조립중...' : '조립'}
+                    {isAssemblyPlaying ? '조립중...' : '조립 버튼'}
                   </button>
                   <button
                     className="viewer-disassemble-btn"
