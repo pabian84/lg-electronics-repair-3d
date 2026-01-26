@@ -179,13 +179,13 @@ export class ManualAssemblyManager {
 
         // (선택 사항) 3. [Settling Step] 들어올렸던 ASSEMBLY 노드를 다시 원위치로 내리기
         // 두 부품이 결합된 후 같이 내려가야 한다면 이 단계가 필요합니다.
-        /*
+
         await this.partAssemblyService.movePartRelative(
-            LEFT_DOOR_DAMPER_ASSEMBLY_NODE, 
+            LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
             LIFT_OFFSET.clone().negate(), // 반대 방향으로 이동
-            500
+            2000
         );
-        */
+
 
         console.log('[ManualAssemblyManager] 댐퍼 커버 조립 완료');
 
