@@ -121,3 +121,30 @@ export const createHighlightMaterial = (color: number, opacity: number = 0.8): T
         side: THREE.DoubleSide
     });
 };
+
+export const getNodeHierarchy = (node: THREE.Object3D): any => {
+    const result: any = {
+        name: node.name,
+        type: node.type,
+        children: [],
+    };
+
+    if (node.children.length > 0) {
+        node.children.forEach((child) => {
+            result.children.push(getNodeHierarchy(child));
+        });
+    }
+
+    return result;
+};
+
+export const exportHierarchyToJson = (hierarchy: any, filename: string = "scene_hierarchy.json") => {
+    const json = JSON.stringify(hierarchy, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+};

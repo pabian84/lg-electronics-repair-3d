@@ -247,7 +247,18 @@ function SelectionManager({
       raycaster.setFromCamera(pointer, camera);
       const hits = raycaster.intersectObjects(scene.children, true);
       if (hits.length > 0) {
-        onNodeSelect(hits[0].object);
+        // 클릭된 Mesh의 최상위 부모 노드를 찾음 (Mesh가 포함된 그룹/장면)
+        let targetNode: THREE.Object3D = hits[0].object;
+        console.log('클릭된 원본 노드: ', targetNode);
+        let parent = targetNode.parent;
+        while (parent && parent !== scene) {
+          // 부모가 Mesh가 아닌 경우(Group 등)면 그 부모를 선택 대상으로 삼음
+          // 단, Mesh가 직접 클릭된 경우는 그 Mesh의 최상위 부모까지 탐색
+          targetNode = parent;
+          parent = parent.parent;
+        }
+        console.log('최종 선택된 노드: ', targetNode);
+        onNodeSelect(targetNode);
       }
     };
 

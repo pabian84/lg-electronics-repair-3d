@@ -8,6 +8,7 @@ import { AnimationHistoryService } from "@/services/AnimationHistoryService";
 import { ManualEditorSidebar } from "@/components/pages/manual-editor";
 import { AnimationHistoryPanel, type AnimationHistoryItem } from "@/components/pages/manual-editor";
 import { DamperAssemblyService, getDamperAssemblyService } from "@/services/fridge/DamperAssemblyService";
+import { getNodeHierarchy, exportHierarchyToJson } from "@/shared/utils/commonUtils";
 import "./ManualEditorPage.css";
 
 type ManualEditorPageProps = {
@@ -532,6 +533,15 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
       };
     }
   }, [sceneRoot]);
+
+  // 브라우저 초기 렌더링시 Hierarchy 구조 출력 및 파일로 저장
+  /* useE ffect(() => {
+    if (sceneRoot) {
+      const hierarchy = getNodeHierarchy(sceneRoot);
+      console.log('Scene Hierarchy:', hierarchy);
+      exportHierarchyToJson(hierarchy, 'scene_hierarchy.json');
+    }
+  }, [sceneRoot]); */
 
   useEffect(() => {
     handlePauseTimeline();

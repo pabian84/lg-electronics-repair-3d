@@ -1,6 +1,6 @@
 import { useRef, useCallback } from 'react';
 import * as THREE from 'three';
-import { createHighlightMaterial } from '../../utils/commonUtils';
+import { createHighlightMaterial } from '../utils/commonUtils';
 
 // 파란색 하이라이트 재질 (Memoization 불필요, 상수처럼 사용)
 const highlightMaterial = createHighlightMaterial(0x0000ff, 0.5);

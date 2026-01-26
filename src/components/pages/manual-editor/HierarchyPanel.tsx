@@ -29,9 +29,10 @@ const buildHierarchy = (root: Object3D | null): HierarchyItem[] => {
     id: node.uuid,
     name: node.name || `Node_${node.id}`,
     node,
-    children: node.children.map(buildNode),
+    children: node.children.length > 0 ? node.children.map(buildNode) : [],
   });
-  return root.children.map(buildNode);
+  // root 노드 자체를 포함하여 전체 계층 구조 반환
+  return [buildNode(root)];
 };
 
 export default function HierarchyPanel({
@@ -143,9 +144,8 @@ export default function HierarchyPanel({
       return (
         <div key={item.id}>
           <div
-            className={`hierarchy-item ${
-              selectedNode?.uuid === item.id ? "selected" : ""
-            }`}
+            className={`hierarchy-item ${selectedNode?.uuid === item.id ? "selected" : ""
+              }`}
             style={{ paddingLeft: `${depth * 12}px` }}
             data-node-id={item.id}
             onClick={() => handleNodeClick(item)}
