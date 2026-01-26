@@ -620,7 +620,6 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
     try {
       await damperAssemblyService.assembleDamperCover({
         duration: 2500,
-        liftHeight: 2.0,
         snapThreshold: 0.2,
         onComplete: () => {
           console.log('[ManualEditor] 댐퍼 커버 조립 완료');
@@ -652,7 +651,6 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
     try {
       await damperAssemblyService.disassembleDamperCover({
         duration: 1500,
-        liftHeight: 1.5,
         onComplete: () => {
           console.log('[ManualEditor] 댐퍼 커버 분해 완료');
           setIsAssemblyPlaying(false);

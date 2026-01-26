@@ -26,7 +26,6 @@ export async function basicAssemblyExample(sceneRoot: THREE.Object3D) {
         LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
         {
             duration: 2500,
-            liftHeight: 2.0,
             snapThreshold: 0.2,
             onProgress: (progress) => {
                 console.log(`조립 진행률: ${(progress * 100).toFixed(1)}%`);
@@ -66,7 +65,6 @@ export async function advancedAssemblyExample(sceneRoot: THREE.Object3D) {
         LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
         {
             duration: 3000,
-            liftHeight: 2.5,
             snapThreshold: 0.25,
             easing: 'elastic.out(1, 0.5)', // 탄성 효과
             onProgress: updateProgressBar,
@@ -90,8 +88,7 @@ export async function assembleAndDisassembleExample(sceneRoot: THREE.Object3D) {
         LEFT_DOOR_DAMPER_COVER_BODY_NODE,
         LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
         {
-            duration: 2000,
-            liftHeight: 1.5
+            duration: 2000
         }
     );
 
@@ -103,8 +100,7 @@ export async function assembleAndDisassembleExample(sceneRoot: THREE.Object3D) {
     await assemblyService.disassemblePart(
         LEFT_DOOR_DAMPER_COVER_BODY_NODE,
         {
-            duration: 1500,
-            liftHeight: 1.5
+            duration: 1500
         }
     );
 
@@ -122,8 +118,7 @@ export async function animationControlExample(sceneRoot: THREE.Object3D) {
         LEFT_DOOR_DAMPER_COVER_BODY_NODE,
         LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
         {
-            duration: 5000, // 긴 시간으로 설정
-            liftHeight: 2.0
+            duration: 5000 // 긴 시간으로 설정
         }
     );
 
@@ -155,8 +150,7 @@ export async function progressMonitoringExample(sceneRoot: THREE.Object3D) {
         LEFT_DOOR_DAMPER_COVER_BODY_NODE,
         LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
         {
-            duration: 3000,
-            liftHeight: 2.0
+            duration: 3000
         }
     );
 
@@ -212,7 +206,6 @@ export function ReactComponentExample() {
                 LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
                 {
                     duration: 2500,
-                    liftHeight: 2.0,
                     onProgress: (progress) => {
                         // React state 업데이트
                         // setProgress(progress);
@@ -253,8 +246,7 @@ export async function sequentialAssemblyExample(sceneRoot: THREE.Object3D) {
             part.source,
             part.target,
             {
-                duration: 2000,
-                liftHeight: 1.5
+                duration: 2000
             }
         );
 

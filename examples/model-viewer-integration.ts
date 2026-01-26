@@ -35,7 +35,6 @@ export async function onAssembleDamperCover() {
     try {
         await damperAssemblyService.assembleDamperCover({
             duration: 2500,
-            liftHeight: 2.0,
             snapThreshold: 0.2,
             onComplete: () => {
                 console.log('🎉 조립 완료! 커버가 Assembly 위치에 결합되었습니다.');
@@ -61,7 +60,6 @@ export async function onDisassembleDamperCover() {
     try {
         await damperAssemblyService.disassembleDamperCover({
             duration: 1500,
-            liftHeight: 1.5,
             onComplete: () => {
                 console.log('🔄 분해 완료!');
             }
@@ -115,7 +113,6 @@ export function useDamperAssembly(sceneRoot: THREE.Object3D | null) {
         if (service) {
             await service.assembleDamperCover({
                 duration: 2500,
-                liftHeight: 2.0,
                 onComplete: () => {
                     console.log('✅ 조립 완료');
                 }
@@ -128,7 +125,6 @@ export function useDamperAssembly(sceneRoot: THREE.Object3D | null) {
         if (service) {
             await service.disassembleDamperCover({
                 duration: 1500,
-                liftHeight: 1.5,
                 onComplete: () => {
                     console.log('✅ 분해 완료');
                 }

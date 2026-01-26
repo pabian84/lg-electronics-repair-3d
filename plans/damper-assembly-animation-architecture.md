@@ -809,6 +809,8 @@ export class PartAssemblyService {
         liftPos.y += config.liftHeight;
         
         // 1. 들어올리기
+        console.log('[Disassembly] 들어올리기 시작:', partNodeName);
+
         this.timeline.to(partNode.position, {
             y: liftPos.y,
             duration: 0.3,

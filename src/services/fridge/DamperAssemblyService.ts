@@ -29,7 +29,6 @@ export class DamperAssemblyService {
      */
     public async assembleDamperCover(options?: {
         duration?: number;
-        liftHeight?: number;
         snapThreshold?: number;
         onComplete?: () => void;
     }): Promise<void> {
@@ -44,7 +43,6 @@ export class DamperAssemblyService {
             LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
             {
                 duration: options?.duration || 2500,
-                liftHeight: options?.liftHeight || 2.0,
                 snapThreshold: options?.snapThreshold || 0.2,
                 onComplete: () => {
                     console.log('[DamperAssemblyService] 댐퍼 커버 조립 완료');
@@ -59,7 +57,6 @@ export class DamperAssemblyService {
      */
     public async disassembleDamperCover(options?: {
         duration?: number;
-        liftHeight?: number;
         onComplete?: () => void;
     }): Promise<void> {
         if (!this.partAssemblyService) {
@@ -72,7 +69,6 @@ export class DamperAssemblyService {
             LEFT_DOOR_DAMPER_COVER_BODY_NODE,
             {
                 duration: options?.duration || 1500,
-                liftHeight: options?.liftHeight || 1.5,
                 onComplete: () => {
                     console.log('[DamperAssemblyService] 댐퍼 커버 분해 완료');
                     options?.onComplete?.();
@@ -128,7 +124,6 @@ export async function exampleDamperAssembly(sceneRoot: THREE.Object3D): Promise<
 
     await service.assembleDamperCover({
         duration: 2500,
-        liftHeight: 2.0,
         onComplete: () => {
             console.log('✅ 조립 완료!');
         }
