@@ -109,11 +109,10 @@ export class PartAssemblyService {
 
         console.log('x>> ', targetLocalPos.x, 'y>> ', targetLocalPos.y, 'z>> ', targetLocalPos.z);
         // [수정] 들어올림(Lift) 단계 없이 타겟 위치로 즉시 선형 이동
-        // 가이드의 3단계 시퀀스(들어올림 -> 이동 -> 스냅)를 단일 직선 이동으로 병합합니다.
+        // `z:` 속성이 없는 이유는 들어올리지 않고 선형이동만 하게 하기 위해서..
         this.timeline.to(sourceNode.position, {
             x: targetLocalPos.x,
             y: targetLocalPos.y,
-            z: 0,
             duration: config.duration / 1000,
             ease: config.easing, // 'linear' 또는 'power3.inOut' 등 옵션에 따름
             onUpdate: () => {
