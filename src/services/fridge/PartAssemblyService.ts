@@ -27,8 +27,21 @@ export class PartAssemblyService {
     private isAnimating: boolean = false;
     private originalPositions: Map<string, THREE.Vector3> = new Map();
 
+    private boundingBoxCache: Map<string, THREE.Box3> = new Map();
+
     constructor(sceneRoot: THREE.Object3D) {
         this.sceneRoot = sceneRoot;
+    }
+
+    /**
+ * [New] 캐시된 바운딩 박스 가져오기 (성능 최적화)
+ */
+    private getBoundingBoxCached(node: THREE.Object3D): THREE.Box3 {
+        if (!this.boundingBoxCache.has(node.name)) {
+            const bbox = getPreciseBoundingBox(node);
+            this.boundingBoxCache.set(node.name, bbox);
+        }
+        return this.boundingBoxCache.get(node.name)!;
     }
 
     public async animateLinearAssembly(
@@ -57,6 +70,7 @@ export class PartAssemblyService {
             });
             return;
         }
+
 
         // 원래 위치 저장 (되돌리기용)
         if (!this.originalPositions.has(sourceNodeName)) {
@@ -90,15 +104,26 @@ export class PartAssemblyService {
             }
         });
 
+
+        // [Modified] 캐시된 바운딩 박스 사용으로 변경
+        const sourceBox = this.getBoundingBoxCached(sourceNode);
+        const targetBox = this.getBoundingBoxCached(targetNode);
+
+        // 디버깅용 로그 (계획서 요구사항)
+        console.log('[Debug] 소스 월드 위치:', sourceNode.getWorldPosition(new THREE.Vector3()));
+        console.log('[Debug] 타겟 월드 위치:', targetNode.getWorldPosition(new THREE.Vector3()));
+
+        // ... existing calculation logic
+
+        // Z축 고정, X/Y 선형 이동 로직 유지
         this.timeline.to(sourceNode.position, {
             x: targetLocalPos.x,
             y: targetLocalPos.y,
-            // z: targetLocalPos.z, // Z축 포함하여 3D 공간에서 정확한 홈 위치로 이동
-            duration: config.duration / 1000,
-            ease: config.easing,
+            // z: targetLocalPos.z, // Z축은 의도적으로 제외하여 고정
+            duration: (options.duration || 1000) / 1000,
+            ease: options.easing || "power2.inOut",
             onUpdate: () => {
-                const progress = this.timeline?.progress() || 0;
-                config.onProgress?.(progress);
+                if (options.onProgress) options.onProgress(this.timeline?.progress() || 0);
             }
         });
 
@@ -108,6 +133,8 @@ export class PartAssemblyService {
             });
         });
     }
+
+
 
     /**
      * PartAssemblyService.ts 추가/수정 부분
@@ -253,7 +280,7 @@ export class PartAssemblyService {
         this.timeline.to(sourceNode.position, {
             x: targetLocalPos.x,
             y: targetLocalPos.y,
-            z: targetLocalPos.z, // Z축 포함하여 3D 공간에서 정확한 홈 위치로 이동
+            // z: targetLocalPos.z, // Z축 포함하여 3D 공간에서 정확한 홈 위치로 이동
             duration: config.duration / 1000,
             ease: config.easing, // 'linear' 또는 'power3.inOut' 등 옵션에 따름
             onUpdate: () => {
@@ -415,8 +442,9 @@ export class PartAssemblyService {
             this.timeline = null;
         }
         this.originalPositions.clear();
+        // [New] 캐시 초기화
+        this.boundingBoxCache.clear();
         this.isAnimating = false;
-        console.log('[Assembly] 서비스 정리 완료');
     }
 
     /**

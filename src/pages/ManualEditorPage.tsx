@@ -12,7 +12,8 @@ import {
   ManualAssemblyManager,
   getManualAssemblyManager,
   prepareManualAssembly,
-  updateManualProgress
+  updateManualProgress,
+  runDamperAssembly
 } from "@/services/fridge/ManualAssemblyManager";
 import { getNodeHierarchy, exportHierarchyToJson } from "@/shared/utils/commonUtils";
 import "./ManualEditorPage.css";
@@ -618,6 +619,37 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
     }
   };
 
+  // 댐퍼 커버 조립 (assembleDamperCover)
+  const handleAssembleDamperCover = async () => {
+    if (!manualAssemblyManager) {
+      console.error('[ManualEditor] ManualAssemblyManager가 초기화되지 않음');
+      return;
+    }
+
+    if (manualAssemblyManager.isPlaying()) {
+      console.warn('[ManualEditor] 애니메이션이 이미 실행 중');
+      return;
+    }
+
+    console.log('[ManualEditor] 댐퍼 커버 조립 시작');
+    setIsAssemblyPlaying(true);
+    setAssemblyProgress(0);
+
+    try {
+      await manualAssemblyManager.assembleDamperCover({
+        duration: 1500,
+        onComplete: () => {
+          console.log('[ManualEditor] 댐퍼 커버 조립 완료');
+          setIsAssemblyPlaying(false);
+          setAssemblyProgress(1);
+        }
+      });
+    } catch (error) {
+      console.error('[ManualEditor] 댐퍼 커버 조립 실패:', error);
+      setIsAssemblyPlaying(false);
+    }
+  };
+
   // 조립 준비 (prepareManualAssembly)
   const handlePrepareAssembly = async () => {
     if (!manualAssemblyManager) {
@@ -782,7 +814,7 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
                   <button
                     className="viewer-assemble-btn"
                     type="button"
-                    onClick={handlePrepareAssembly}
+                    onClick={handleAssembleDamperCover}
                     onPointerDown={(event) => event.stopPropagation()}
                     onMouseDown={(event) => event.stopPropagation()}
                     onTouchStart={(event) => event.stopPropagation()}

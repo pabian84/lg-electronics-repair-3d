@@ -113,10 +113,15 @@ export class CoordinateTransformUtils {
 
         targetNode.traverse((child) => {
             if (child instanceof THREE.Mesh && child.geometry) {
-                child.geometry.computeBoundingBox();
+                // 지오메트리 바운딩 박스 계산 (이미 있으면 재사용)
+                if (!child.geometry.boundingBox) {
+                    child.geometry.computeBoundingBox();
+                }
+
                 const geomBox = child.geometry.boundingBox;
                 if (geomBox && !geomBox.isEmpty()) {
                     const worldBox = geomBox.clone();
+                    // 자식의 월드 매트릭스를 적용하여 월드 좌표계 바운딩 박스 생성
                     worldBox.applyMatrix4(child.matrixWorld);
                     box.union(worldBox);
                     hasMesh = true;
@@ -124,11 +129,12 @@ export class CoordinateTransformUtils {
             }
         });
 
-        // 메쉬가 없으면 위치 기준으로라도 잡음
+        // 메쉬가 없거나 바운딩 박스가 비어있으면 노드의 월드 위치를 중심으로 최소 크기 박스 생성
         if (!hasMesh || box.isEmpty()) {
             const pos = new THREE.Vector3();
             targetNode.getWorldPosition(pos);
-            box.setFromCenterAndSize(pos, new THREE.Vector3(1, 1, 1));
+            box.setFromCenterAndSize(pos, new THREE.Vector3(0.01, 0.01, 0.01));
+            console.warn(`[CoordinateTransformUtils] No mesh found for ${targetNode.name}, using world position.`);
         }
 
         return box;

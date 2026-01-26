@@ -137,6 +137,41 @@ export class ManualAssemblyManager {
         this.isAssemblyPlaying = false;
         console.log('[ManualAssemblyManager] 서비스 정리 완료');
     }
+
+    /**
+     * [New] 댐퍼 커버 조립 실행 함수
+     * 계획서의 요구사항: 왼쪽 돌출부를 오른쪽 홈에 삽입
+     */
+    public async assembleDamperCover(options?: {
+        duration?: number;
+        onComplete?: () => void;
+    }): Promise<void> {
+        console.log('assembleDamperCover!!!');
+        if (!this.partAssemblyService || !this.sceneRoot) {
+            console.warn('[ManualAssemblyManager] 서비스가 초기화되지 않았습니다.');
+            return;
+        }
+
+        console.log('[ManualAssemblyManager] 댐퍼 커버 조립 애니메이션 시작');
+
+        try {
+            await this.partAssemblyService.animateLinearAssembly(
+                LEFT_DOOR_DAMPER_COVER_BODY_NODE, // Source: 커버 바디
+                LEFT_DOOR_DAMPER_ASSEMBLY_NODE,   // Target: 댐퍼 어셈블리
+                {
+                    duration: options?.duration || 1500,
+                    slotOffset: DAMPER_COVER_SLOT_OFFSET, // 오프셋 적용
+                    easing: "power2.out", // 부드러운 감속 효과
+                    onComplete: () => {
+                        console.log('[ManualAssemblyManager] 조립 완료');
+                        options?.onComplete?.();
+                    }
+                }
+            );
+        } catch (error) {
+            console.error('[ManualAssemblyManager] 조립 중 오류 발생:', error);
+        }
+    }
 }
 
 // 싱글톤 인스턴스 (전역에서 사용 가능)
@@ -190,4 +225,12 @@ export async function disassembleDamperCover(
     const manager = getManualAssemblyManager();
     manager.initialize(sceneRoot);
     await manager.disassembleDamperCover(options);
+}
+
+/**
+ * [New] 외부에서 호출 가능한 조립 함수 export
+ */
+export async function runDamperAssembly(duration: number = 1500): Promise<void> {
+    const manager = getManualAssemblyManager();
+    await manager.assembleDamperCover({ duration });
 }
