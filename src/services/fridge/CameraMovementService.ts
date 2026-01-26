@@ -3,7 +3,7 @@ import gsap from 'gsap';
 import { LEFT_DOOR_NODES } from '../../shared/utils/fridgeConstants';
 import * as THREE from 'three';
 import { getPreciseBoundingBox } from '../../shared/utils/commonUtils';
-// import { findNodeHeight } from '../../shared/utils/findNodeHeight'
+import { findNodeHeight } from '../../shared/utils/findNodeHeight'
 
 // ============================================================================
 // Camera movement options
@@ -232,7 +232,7 @@ export class CameraMovementService {
                     this.cameraControls.smoothTime = originalSmoothTime;
 
 
-                    /* // 카메라 이동 완료 후 노드 하이라이트
+                    // 카메라 이동 완료 후 노드 하이라이트
                     const nodeColors = [
                         0xffff00, // 녹색 (Cover Body)
                         0xff0000, // 빨간색 (Damper Assembly)
@@ -241,6 +241,8 @@ export class CameraMovementService {
                     ];
 
                     LEFT_DOOR_NODES.forEach((nodeName, index) => {
+                        if (index > 1) return; // 0번째, 1번째 인덱스만 색상 적용
+
                         const node = this.getNodeByName(nodeName);
                         if (node && camera) {
                             console.log(`[Highlight] Target: ${nodeName}`);
@@ -254,7 +256,7 @@ export class CameraMovementService {
                     });
 
                     // 모든 노드 하이라이트가 완료된 후 추가 확인
-                    console.log('All nodes highlighted'); */
+                    console.log('All nodes highlighted');
 
                     console.log('Camera movement completed');
                     resolve();

@@ -43,12 +43,11 @@ export class ManualAssemblyManager {
         this.isAssemblyPlaying = true;
 
         try {
-            await this.partAssemblyService.assemblePart(
+            await this.partAssemblyService.animateLinearAssembly(
                 LEFT_DOOR_DAMPER_COVER_BODY_NODE,
                 LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
                 {
                     duration: options?.duration || 2500,
-                    snapThreshold: options?.snapThreshold || 0.2,
                     onProgress: (progress) => {
                         this.assemblyProgress = progress;
                         options?.onProgress?.(progress);

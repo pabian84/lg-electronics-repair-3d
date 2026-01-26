@@ -86,7 +86,6 @@ export class PartAssemblyService {
         this.timeline.to(sourceNode.position, {
             x: targetLocalPos.x,
             y: targetLocalPos.y,
-            z: targetLocalPos.z,
             duration: config.duration / 1000,
             ease: config.easing,
             onUpdate: () => {
