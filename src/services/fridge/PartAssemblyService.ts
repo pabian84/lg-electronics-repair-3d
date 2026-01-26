@@ -14,6 +14,7 @@ export interface AssemblyOptions {
     onProgress?: (progress: number) => void;
     onSnap?: () => void;         // 스냅 진입 시 콜백
     onComplete?: () => void;
+    slotOffset?: THREE.Vector3;  // 슬롯 삽입을 위한 오프셋 (홈 입구 위치 조정)
 }
 
 /**
@@ -65,7 +66,13 @@ export class PartAssemblyService {
         // 1. 대상 노드(홈)의 월드 좌표 중심점 계산
         const targetWorldCenter = CoordinateTransformUtils.getWorldCenter(targetNode);
 
-        // 2. 월드 좌표를 소스 노드의 부모 기준 로컬 좌표로 변환
+        // 2. 슬롯 오프셋 적용 (홈 입구 위치 조정)
+        if (options.slotOffset) {
+            targetWorldCenter.add(options.slotOffset);
+            console.log('[Assembly] 슬롯 오프셋 적용:', options.slotOffset);
+        }
+
+        // 3. 월드 좌표를 소스 노드의 부모 기준 로컬 좌표로 변환
         const targetLocalPos = sourceNode.parent
             ? CoordinateTransformUtils.worldToLocal(targetWorldCenter, sourceNode.parent)
             : targetWorldCenter;
@@ -86,6 +93,7 @@ export class PartAssemblyService {
         this.timeline.to(sourceNode.position, {
             x: targetLocalPos.x,
             y: targetLocalPos.y,
+            // z: targetLocalPos.z, // Z축 포함하여 3D 공간에서 정확한 홈 위치로 이동
             duration: config.duration / 1000,
             ease: config.easing,
             onUpdate: () => {
@@ -120,6 +128,13 @@ export class PartAssemblyService {
 
         // 타겟 위치 계산 (기존 로직 활용)
         const targetWorldCenter = CoordinateTransformUtils.getWorldCenter(targetNode);
+
+        // 슬롯 오프셋 적용 (홈 입구 위치 조정)
+        if (options.slotOffset) {
+            targetWorldCenter.add(options.slotOffset);
+            console.log('[Assembly] 슬롯 오프셋 적용:', options.slotOffset);
+        }
+
         const targetLocalPos = sourceNode.parent
             ? CoordinateTransformUtils.worldToLocal(targetWorldCenter, sourceNode.parent)
             : targetWorldCenter;
@@ -131,6 +146,7 @@ export class PartAssemblyService {
         this.timeline.to(sourceNode.position, {
             x: targetLocalPos.x,
             y: targetLocalPos.y,
+            // z: targetLocalPos.z, // Z축 포함하여 3D 공간에서 정확한 홈 위치로 이동
             duration: 1, // progress(0~1) 계산을 쉽게 하기 위해 1초로 설정
             ease: 'none', // 수동 제어 시에는 linear가 가장 직관적임
             onUpdate: () => {
@@ -205,7 +221,13 @@ export class PartAssemblyService {
         const targetWorldCenter = CoordinateTransformUtils.getWorldCenter(targetNode);
         console.log('[Assembly] 타겟 월드 중심점:', targetWorldCenter);
 
-        // 2. source의 부모 기준 로컬 좌표로 변환
+        // 2. 슬롯 오프셋 적용 (홈 입구 위치 조정)
+        if (options.slotOffset) {
+            targetWorldCenter.add(options.slotOffset);
+            console.log('[Assembly] 슬롯 오프셋 적용:', options.slotOffset);
+        }
+
+        // 3. source의 부모 기준 로컬 좌표로 변환
         const targetLocalPos = sourceNode.parent
             ? CoordinateTransformUtils.worldToLocal(targetWorldCenter, sourceNode.parent)
             : targetWorldCenter;
@@ -228,10 +250,10 @@ export class PartAssemblyService {
 
         console.log('x>> ', targetLocalPos.x, 'y>> ', targetLocalPos.y, 'z>> ', targetLocalPos.z);
         // [수정] 들어올림(Lift) 단계 없이 타겟 위치로 즉시 선형 이동
-        // `z:` 속성이 없는 이유는 들어올리지 않고 선형이동만 하게 하기 위해서..
         this.timeline.to(sourceNode.position, {
             x: targetLocalPos.x,
             y: targetLocalPos.y,
+            z: targetLocalPos.z, // Z축 포함하여 3D 공간에서 정확한 홈 위치로 이동
             duration: config.duration / 1000,
             ease: config.easing, // 'linear' 또는 'power3.inOut' 등 옵션에 따름
             onUpdate: () => {

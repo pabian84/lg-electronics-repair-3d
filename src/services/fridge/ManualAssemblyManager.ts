@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { PartAssemblyService } from './PartAssemblyService';
 import {
     LEFT_DOOR_DAMPER_COVER_BODY_NODE,
-    LEFT_DOOR_DAMPER_ASSEMBLY_NODE
+    LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
+    DAMPER_COVER_SLOT_OFFSET
 } from '../../shared/utils/fridgeConstants';
 
 /**
@@ -48,6 +49,7 @@ export class ManualAssemblyManager {
                 LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
                 {
                     duration: options?.duration || 2500,
+                    slotOffset: DAMPER_COVER_SLOT_OFFSET, // 슬롯 오프셋 적용
                     onProgress: (progress) => {
                         this.assemblyProgress = progress;
                         options?.onProgress?.(progress);
