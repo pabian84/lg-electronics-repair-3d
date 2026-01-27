@@ -139,16 +139,21 @@ export const getNodeHierarchy = (node: THREE.Object3D): any => {
 };
 
 /**
- * EdgesGeometry를 사용하여 노드의 홈(모서리) 부분을 식별하고 하이라이트 라인을 생성하는 함수
+ * 법선 벡터 기반 필터링을 사용하여 특정 방향의 면만 선택하고,
+ * 해당 면에서 홈(모서리) 부분만 하이라이트하는 함수
  * @param targetNode 대상 노드
  * @param color 하이라이트 색상
  * @param thresholdAngle 엣지로 판정할 최소 각도 (기본값 15도)
+ * @param targetNormal 필터링할 방향 법선 벡터 (기본값: Z축 방향 [0, 0, 1])
+ * @param normalTolerance 법선 벡터 허용 오차 (기본값: 0.2)
  * @returns 생성된 LineSegments 객체들의 배열
  */
 export const createGrooveHighlight = (
     targetNode: THREE.Object3D,
     color: number = 0x00ffff,
-    thresholdAngle: number = 15
+    thresholdAngle: number = 15,
+    targetNormal: THREE.Vector3 = new THREE.Vector3(0, 0, 1),
+    normalTolerance: number = 0.2
 ): THREE.LineSegments[] => {
     const highlights: THREE.LineSegments[] = [];
 
@@ -157,22 +162,131 @@ export const createGrooveHighlight = (
 
     targetNode.traverse((child) => {
         if (child instanceof THREE.Mesh && child.geometry) {
-            // EdgesGeometry 생성
-            const edges = new THREE.EdgesGeometry(child.geometry, thresholdAngle);
-            const lineMaterial = new THREE.LineBasicMaterial({
-                color,
-                linewidth: 2,
-                transparent: true,
-                opacity: 0.8,
-                depthTest: false // 다른 객체에 가려지지 않게 설정
-            });
+            const geometry = child.geometry;
 
-            const lineSegments = new THREE.LineSegments(edges, lineMaterial);
+            // 법선 벡터가 없으면 계산
+            if (!geometry.attributes.normal) {
+                geometry.computeVertexNormals();
+            }
 
-            // 대상 메쉬의 월드 트랜스폼 적용
-            lineSegments.applyMatrix4(child.matrixWorld);
+            const positions = geometry.attributes.position;
+            const normals = geometry.attributes.normal;
+            const indices = geometry.index;
 
-            highlights.push(lineSegments);
+            // 필터링된 인덱스를 저장할 배열
+            const filteredIndices: number[] = [];
+
+            if (indices) {
+                // 인덱스 버퍼가 있는 경우
+                for (let i = 0; i < indices.count; i += 3) {
+                    const idx1 = indices.getX(i);
+                    const idx2 = indices.getX(i + 1);
+                    const idx3 = indices.getX(i + 2);
+
+                    // 세 정점의 법선 벡터 가져오기
+                    const normal1 = new THREE.Vector3(
+                        normals.getX(idx1),
+                        normals.getY(idx1),
+                        normals.getZ(idx1)
+                    );
+                    const normal2 = new THREE.Vector3(
+                        normals.getX(idx2),
+                        normals.getY(idx2),
+                        normals.getZ(idx2)
+                    );
+                    const normal3 = new THREE.Vector3(
+                        normals.getX(idx3),
+                        normals.getY(idx3),
+                        normals.getZ(idx3)
+                    );
+
+                    // 로컬 법선 벡터를 월드 법선 벡터로 변환
+                    normal1.applyQuaternion(child.quaternion);
+                    normal2.applyQuaternion(child.quaternion);
+                    normal3.applyQuaternion(child.quaternion);
+
+                    // 평균 법선 벡터 계산
+                    const avgNormal = new THREE.Vector3()
+                        .addVectors(normal1, normal2)
+                        .add(normal3)
+                        .normalize();
+
+                    // 타겟 법선 벡터와의 비교 (내적 값으로 비교)
+                    const dotProduct = Math.abs(avgNormal.dot(targetNormal));
+
+                    // 허용 오차 범위 내에 있는 면만 선택
+                    if (dotProduct > (1 - normalTolerance)) {
+                        filteredIndices.push(idx1, idx2, idx3);
+                    }
+                }
+            } else {
+                // 인덱스 버퍼가 없는 경우 (비인덱스 지오메트리)
+                for (let i = 0; i < positions.count; i += 3) {
+                    const normal1 = new THREE.Vector3(
+                        normals.getX(i),
+                        normals.getY(i),
+                        normals.getZ(i)
+                    );
+                    const normal2 = new THREE.Vector3(
+                        normals.getX(i + 1),
+                        normals.getY(i + 1),
+                        normals.getZ(i + 1)
+                    );
+                    const normal3 = new THREE.Vector3(
+                        normals.getX(i + 2),
+                        normals.getY(i + 2),
+                        normals.getZ(i + 2)
+                    );
+
+                    normal1.applyQuaternion(child.quaternion);
+                    normal2.applyQuaternion(child.quaternion);
+                    normal3.applyQuaternion(child.quaternion);
+
+                    const avgNormal = new THREE.Vector3()
+                        .addVectors(normal1, normal2)
+                        .add(normal3)
+                        .normalize();
+
+                    const dotProduct = Math.abs(avgNormal.dot(targetNormal));
+
+                    if (dotProduct > (1 - normalTolerance)) {
+                        filteredIndices.push(i, i + 1, i + 2);
+                    }
+                }
+            }
+
+            // 필터링된 면이 있는 경우에만 EdgesGeometry 생성
+            if (filteredIndices.length > 0) {
+                // 필터링된 인덱스로 새로운 지오메트리 생성
+                const filteredGeometry = new THREE.BufferGeometry();
+                const filteredPositions = new Float32Array(filteredIndices.length * 3);
+
+                for (let i = 0; i < filteredIndices.length; i++) {
+                    const idx = filteredIndices[i];
+                    filteredPositions[i * 3] = positions.getX(idx);
+                    filteredPositions[i * 3 + 1] = positions.getY(idx);
+                    filteredPositions[i * 3 + 2] = positions.getZ(idx);
+                }
+
+                filteredGeometry.setAttribute('position', new THREE.BufferAttribute(filteredPositions, 3));
+
+                // EdgesGeometry 생성 (필터링된 면만)
+                const edges = new THREE.EdgesGeometry(filteredGeometry, thresholdAngle);
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color,
+                    linewidth: 2,
+                    transparent: true,
+                    opacity: 0.8,
+                    depthTest: false
+                });
+
+                const lineSegments = new THREE.LineSegments(edges, lineMaterial);
+
+                // 대상 메쉬의 월드 트랜스폼 적용
+                lineSegments.applyMatrix4(child.matrixWorld);
+
+                highlights.push(lineSegments);
+            }
         }
     });
 

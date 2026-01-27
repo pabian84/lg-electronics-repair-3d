@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import gsap from 'gsap';
-import { createGrooveHighlight } from '../../shared/utils/commonUtils';
 import { LEFT_DOOR_DAMPER_ASSEMBLY_NODE } from '../../shared/utils/fridgeConstants';
+import { NormalBasedHighlight } from '../../shared/utils/NormalBasedHighlight';
+import { StencilOutlineHighlight } from '../../shared/utils/StencilOutlineHighlight';
 
 /**
  * 댐퍼 조립 서비스 (轻型版 - 조립 기능은 ManualAssemblyManager로 이동됨)
@@ -22,8 +23,20 @@ export class DamperAssemblyService {
     private activeHighlights: THREE.Object3D[] = [];
     private debugObjects: THREE.Object3D[] = [];
 
+    // 하이라이트 컴포넌트들
+    private normalHighlight: NormalBasedHighlight | null = null;
+    private stencilHighlight: StencilOutlineHighlight | null = null;
+
     public initialize(sceneRoot: THREE.Object3D): void {
         this.sceneRoot = sceneRoot;
+
+        // 하이라이트 컴포넌트들 초기화
+        this.normalHighlight = new NormalBasedHighlight();
+        this.normalHighlight.initialize(sceneRoot);
+
+        this.stencilHighlight = new StencilOutlineHighlight();
+        this.stencilHighlight.initialize(sceneRoot);
+
         console.log('[DamperAssemblyService] 초기화 완료');
     }
 
@@ -98,134 +111,59 @@ export class DamperAssemblyService {
      * 노드의 안쪽 홈 부분을 하이라이트합니다.
      */
     private createGrooveMeshHighlight(originalMesh: THREE.Mesh, color: number): void {
-        if (!this.sceneRoot) return;
+        if (!this.sceneRoot || !this.stencilHighlight) return;
 
-        // 1. 원본 메쉬의 월드 매트릭스 업데이트
-        originalMesh.updateMatrixWorld(true);
-
-        // 2. 메쉬 클론 (안쪽 홈 부분 하이라이트용)
-        const highlightMesh = originalMesh.clone();
-
-        // 월드 좌표를 유지하기 위해 matrixWorld 적용
-        highlightMesh.applyMatrix4(originalMesh.matrixWorld);
-
-        // 3. 안쪽 홈 하이라이트용 재질 설정 (Stencil Buffer 사용)
-        const highlightMaterial = new THREE.MeshBasicMaterial({
-            color: color,
-            transparent: true,
-            opacity: 0.6,
-            side: THREE.DoubleSide,
-            depthTest: false,
-            depthWrite: false,
-            stencilWrite: true,
-            stencilFunc: THREE.AlwaysStencilFunc,
-            stencilRef: 1,
-            stencilZPass: THREE.ReplaceStencilOp
-        });
-
-        highlightMesh.material = highlightMaterial;
-
-        // 4. Outline 메쉬 생성 (BackSide 렌더링으로 외곽선 효과)
-        const outlineMesh = originalMesh.clone();
-        outlineMesh.applyMatrix4(originalMesh.matrixWorld);
-
-        // 스케일을 약간 확대하여 외곽선 효과 생성
-        outlineMesh.scale.multiplyScalar(1.03);
-
-        // Outline용 재질 설정 (BackSide만 렌더링)
-        const outlineMaterial = new THREE.MeshBasicMaterial({
-            color: color,
-            transparent: true,
-            opacity: 0.8,
-            side: THREE.BackSide,
-            depthTest: false,
-            depthWrite: false,
-            stencilWrite: true,
-            stencilFunc: THREE.EqualStencilFunc,
-            stencilRef: 1,
-            stencilFail: THREE.KeepStencilOp,
-            stencilZFail: THREE.KeepStencilOp,
-            stencilZPass: THREE.KeepStencilOp
-        });
-
-        outlineMesh.material = outlineMaterial;
-
-        // 5. 렌더링 순서 보장
-        highlightMesh.renderOrder = 998;
-        outlineMesh.renderOrder = 999;
-
-        // 6. 애니메이션 추가 (하이라이트와 아웃라인 동시에)
-        gsap.to(highlightMaterial, {
-            opacity: 0.3,
-            duration: 1.0,
-            repeat: -1,
-            yoyo: true,
-            ease: "sine.inOut"
-        });
-
-        gsap.to(outlineMaterial, {
-            opacity: 0.4,
-            duration: 1.0,
-            repeat: -1,
-            yoyo: true,
-            ease: "sine.inOut"
-        });
-
-        this.activeHighlights.push(highlightMesh, outlineMesh);
-
-        // sceneRoot에 추가
-        this.sceneRoot.add(highlightMesh);
-        this.sceneRoot.add(outlineMesh);
-
-        // [디버그] 추가 여부 확인
-        console.log('[DamperAssemblyService] Stencil/Outline 하이라이트 추가됨:', {
-            highlightMesh: highlightMesh.name,
-            outlineMesh: outlineMesh.name,
-            position: highlightMesh.position,
-            scale: highlightMesh.scale
-        });
+        this.stencilHighlight.createSingleMeshCloneHighlight(originalMesh, color);
     }
 
     /**
-     * 댐퍼 어셈블리의 정면(XY) 홈 영역을 분석하여 시각화합니다.
-     * EdgesGeometry를 사용하여 홈 부분(급격한 각도 변화가 있는 모서리)만 하이라이트합니다.
+     * [신규] 메쉬 클론 + Outline Shader/Stencil Buffer 방식으로
+     * 댐퍼 어셈블리의 정면(XY) 홈 영역을 정밀하게 하이라이트합니다.
+     * 법선 벡터 기반 필터링으로 홈 내부 굴곡을 따라 정밀하게 하이라이트합니다.
      */
     public highlightDamperGroove(): void {
-        console.log('highlightDamperGroove!!!');
-        if (!this.sceneRoot) return;
+        console.log('highlightDamperGroove - Mesh Clone + Stencil Buffer 방식');
+        if (!this.sceneRoot || !this.stencilHighlight) return;
 
         const targetNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE);
         if (!targetNode) return;
 
         this.clearHighlights();
 
-        // EdgesGeometry를 사용하여 홈 부분만 하이라이트
-        const grooveHighlights = createGrooveHighlight(targetNode, 0xffff00, 15);
+        // [신규] 법선 필터링 + 메쉬 클론 + Stencil Buffer 방식 사용
+        this.stencilHighlight.createGrooveMeshHighlightWithNormalFilter(
+            targetNode,
+            0xff00ff,  // 마젠타 색상
+            15,        // thresholdAngle: 15도 이상 각도 변화가 있는 모서리
+            new THREE.Vector3(0, 0, 1),  // Z축 방향 법선 필터링
+            0.2        // normalTolerance: 20% 허용 오차
+        );
 
-        // 하이라이트 라인들을 씬에 추가
-        grooveHighlights.forEach((lineSegments) => {
-            this.activeHighlights.push(lineSegments);
-            this.sceneRoot!.add(lineSegments);
+        console.log('[LG CNS] 메쉬 클론 + Stencil Buffer 기반 홈 하이라이트 완료');
+    }
 
-            // GSAP 애니메이션 추가 (맥동 효과)
-            gsap.to(lineSegments.material, {
-                opacity: 0.3,
-                duration: 1.0,
-                repeat: -1,
-                yoyo: true,
-                ease: "sine.inOut"
-            });
-        });
+    /**
+     * 법선 벡터(Normal Vector) 기반 필터링을 사용하여 카메라를 향하는 면만 하이라이트합니다.
+     */
+    public highlightDamperFacesByNormal(camera: THREE.Camera, color: number = 0xff0000): void {
+        if (!this.sceneRoot || !this.normalHighlight) return;
 
-        console.log('[LG CNS] EdgesGeometry 기반 홈 하이라이트 완료:', {
-            highlightCount: grooveHighlights.length
-        });
+        const targetNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE);
+        if (!(targetNode instanceof THREE.Mesh)) return;
+
+        this.clearHighlights();
+        this.normalHighlight.highlightFacesByNormal(targetNode, camera, color);
     }
 
     /**
      * 적용된 모든 하이라이트를 제거합니다.
      */
     public clearHighlights(): void {
+        // 컴포넌트들의 하이라이트 정리
+        this.normalHighlight?.clearHighlights();
+        this.stencilHighlight?.clearHighlights();
+
+        // 기존 하이라이트들 정리 (하위 호환성)
         this.activeHighlights.forEach((obj) => {
             if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
                 gsap.killTweensOf(obj.material);
