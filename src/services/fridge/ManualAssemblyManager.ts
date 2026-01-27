@@ -5,6 +5,7 @@ import {
     LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
     DAMPER_COVER_SLOT_OFFSET
 } from '../../shared/utils/fridgeConstants';
+import { getDamperAssemblyService } from '../fridge/DamperAssemblyService';
 
 /**
  * 수동 조립 관리자
@@ -23,6 +24,11 @@ export class ManualAssemblyManager {
     public initialize(sceneRoot: THREE.Object3D): void {
         this.sceneRoot = sceneRoot;
         this.partAssemblyService = new PartAssemblyService(sceneRoot);
+
+        // DamperAssemblyService도 초기화해야 함
+        const damperService = getDamperAssemblyService();
+        damperService.initialize(sceneRoot);
+
         console.log('[ManualAssemblyManager] 초기화 완료');
     }
 
@@ -148,6 +154,12 @@ export class ManualAssemblyManager {
         if (!this.partAssemblyService || !this.sceneRoot) return;
 
         console.log('[ManualAssemblyManager] 댐퍼 커버 조립 시작 (충돌 방지 모드)');
+
+        // 댐퍼 홈 하이라이트 활성화
+        const damperService = getDamperAssemblyService();
+        damperService.highlightDamperGroove();
+
+        return;
 
         // 1. [Lifting Step] ASSEMBLY 노드를 살짝 들어올려 공간 확보
         // 모델 좌표계에 따라 Y축(0, 0.15, 0) 대신 Z축(-0.15) 등이 필요할 수 있음

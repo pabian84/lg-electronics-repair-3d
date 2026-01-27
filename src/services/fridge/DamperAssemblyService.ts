@@ -30,6 +30,7 @@ export class DamperAssemblyService {
      * 댐퍼 어셈블리 노드의 홈 부분을 식별하고 하이라이트 효과를 적용합니다.
      */
     public highlightDamperGroove(): void {
+        console.log('highlightDamperGroove!!!');
         if (!this.sceneRoot) return;
 
         // 기존 하이라이트 제거
@@ -43,7 +44,7 @@ export class DamperAssemblyService {
 
         // 홈 부분 식별 및 하이라이트 생성 (전략 A: EdgesGeometry)
         // thresholdAngle을 20도로 설정하여 급격한 각도 변화가 있는 홈 부분을 타겟팅
-        const highlights = createGrooveHighlight(damperNode, 0x00ff00, 20);
+        const highlights = createGrooveHighlight(damperNode, 0xff0000, 20);
         this.activeHighlights = highlights;
 
         highlights.forEach((line) => {
