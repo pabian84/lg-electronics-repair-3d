@@ -28,7 +28,7 @@ export class DamperAssemblyService {
     }
 
     /**
-     * 댐퍼 어셈블리 노드의 홈 부분을 식별하고 하이라이트 효과를 적용합니다.
+     * 댐퍼 어셈블리의 정면(XY) 홈 영역을 분석하여 시각화합니다.
      */
     public highlightDamperGroove(): void {
         if (!this.sceneRoot) return;
@@ -36,55 +36,108 @@ export class DamperAssemblyService {
         const targetNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE);
         if (!(targetNode instanceof THREE.Mesh)) return;
 
-        const mesh = targetNode;
-        mesh.geometry.computeBoundingBox();
-        const localBox = mesh.geometry.boundingBox!;
+        // 1. 기존 디버그 객체 제거
+        this.clearHighlights();
+
+        // 2. 정점 분석 함수 호출 (이 함수에서 정확한 좌/우 영역의 Box3를 반환합니다)
+        const grooveBounds = this.findGrooveBounds(targetNode);
+        if (!grooveBounds) {
+            console.warn('[DamperDebug] 홈 영역을 분석할 수 없습니다.');
+            return;
+        }
+
+        // 3. 분석된 결과(leftBox, rightBox)를 바탕으로 테두리 생성
+        const maxZ = targetNode.geometry.boundingBox!.max.z;
+        this.createBorderFromBox(targetNode, grooveBounds.left, 0xffff00, maxZ);  // 왼쪽 (노란색)
+        this.createBorderFromBox(targetNode, grooveBounds.right, 0x00ffff, maxZ); // 오른쪽 (하늘색)
+
+        console.log('[DamperDebug] 정점 분석 기반 홈 시각화 완료');
+    }
+
+    /**
+     * 계산된 Box3를 기반으로 실제 Plane 테두리를 생성하여 씬에 추가합니다.
+     */
+    private createBorderFromBox(mesh: THREE.Mesh, box: THREE.Box3, color: number, maxZ: number): void {
         const size = new THREE.Vector3();
         const center = new THREE.Vector3();
-        localBox.getSize(size);
+        box.getSize(size);
+        box.getCenter(center);
+
+        // 정면(XY) 기준 PlaneGeometry 생성
+        const geom = new THREE.PlaneGeometry(size.x, size.y);
+        const edges = new THREE.EdgesGeometry(geom);
+        const line = new THREE.LineSegments(
+            edges,
+            new THREE.LineBasicMaterial({ color, linewidth: 2, depthTest: false })
+        );
+
+        line.renderOrder = 999;
+        // 위치: 분석된 영역의 중앙, Z축은 모델의 가장 앞면(maxZ)에 밀착
+        line.position.set(center.x, center.y, maxZ + 0.005);
+        line.applyMatrix4(mesh.matrixWorld);
+
+        this.sceneRoot?.add(line);
+        this.debugObjects.push(line);
+    }
+
+    /**
+     * [핵심 로직] 모델의 모든 정점을 조사하여 "안쪽으로 들어간" 영역의 바운딩 박스를 찾습니다.
+     */
+    private findGrooveBounds(mesh: THREE.Mesh): { left: THREE.Box3, right: THREE.Box3 } | null {
+        const geometry = mesh.geometry;
+        const positions = geometry.attributes.position;
+        if (!positions) return null;
+
+        geometry.computeBoundingBox();
+        const localBox = geometry.boundingBox!;
+        const center = new THREE.Vector3();
         localBox.getCenter(center);
 
-        // 1. 정면(XY 평면) 기준 홈 규격 정의
-        const leftWidth = size.x * 0.15;  // 왼쪽 작은 홈 폭
-        const rightWidth = size.x * 0.25; // 오른쪽 큰 홈 폭
-        const grooveHeight = size.y * 0.4; // 정면에서 보이는 홈의 높이
+        // 1. Z축 데이터 범위 분석 (정밀 디버깅용)
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (let i = 0; i < positions.count; i++) {
+            const z = positions.getZ(i);
+            if (z < minZ) minZ = z;
+            if (z > maxZ) maxZ = z;
+        }
 
-        const createFrontBorder = (width: number, height: number, offsetX: number, offsetY: number, color: number) => {
-            const geom = new THREE.PlaneGeometry(width, height);
-            const edges = new THREE.EdgesGeometry(geom);
-            const material = new THREE.LineBasicMaterial({
-                color,
-                linewidth: 2,
-                depthTest: false, // 모델에 가려지더라도 항상 보이게 설정
-                transparent: true,
-                opacity: 0.8
-            });
-            const line = new THREE.LineSegments(edges, material);
+        // 홈의 깊이를 판단할 임계값 (전체 두께의 10% 또는 최소 0.001로 자동 설정)
+        const depthRange = maxZ - minZ;
+        const threshold = Math.max(depthRange * 0.1, 0.001);
 
-            // 렌더링 순서를 높여서 다른 객체보다 위에 그림
-            line.renderOrder = 999;
+        console.log(`[DamperDebug] 모델 분석 정보:`, {
+            maxZ: maxZ.toFixed(4),
+            minZ: minZ.toFixed(4),
+            depthRange: depthRange.toFixed(4),
+            appliedThreshold: threshold.toFixed(4),
+            localCenterX: center.x.toFixed(4)
+        });
 
-            // 위치 설정: localBox.max.z를 사용하여 확실한 정면에 배치
-            line.position.set(
-                center.x + offsetX,
-                center.y + offsetY,
-                localBox.max.z + 0.01 // center.z + size.z/2 보다 정확한 정면 좌표
-            );
+        const leftPoints: THREE.Vector3[] = [];
+        const rightPoints: THREE.Vector3[] = [];
 
-            line.applyMatrix4(mesh.matrixWorld);
-            return line;
+        // 2. 정점 수집 (중앙 좌표 center.x를 기준으로 좌우 분류)
+        for (let i = 0; i < positions.count; i++) {
+            const p = new THREE.Vector3(positions.getX(i), positions.getY(i), positions.getZ(i));
+
+            // 정면(maxZ)보다 일정 깊이 이상 들어간 점만 수집
+            if (p.z < maxZ - threshold) {
+                // 단순 0이 아닌 모델의 로컬 중심(center.x) 기준으로 좌우 나눔
+                if (p.x < center.x) leftPoints.push(p);
+                else rightPoints.push(p);
+            }
+        }
+
+        if (leftPoints.length === 0 || rightPoints.length === 0) {
+            console.warn(`[DamperDebug] 정점을 찾지 못함: 좌(${leftPoints.length}), 우(${rightPoints.length})`);
+            return null;
+        }
+
+        return {
+            left: new THREE.Box3().setFromPoints(leftPoints),
+            right: new THREE.Box3().setFromPoints(rightPoints)
         };
-
-        // 2. 위치 값 미세 조정 (이미지 기반: 왼쪽은 중앙에 가깝고, 오른쪽은 끝에 치우침)
-        // offsetX 값을 좌우 비대칭으로 조정하여 가시성을 확보합니다.
-        const leftGroove = createFrontBorder(leftWidth, grooveHeight, -size.x * 0.15, 0, 0xffff00);
-        const rightGroove = createFrontBorder(rightWidth, grooveHeight, size.x * 0.15, 0, 0x00ffff);
-
-        // 3. 씬에 추가 및 관리
-        this.sceneRoot.add(leftGroove, rightGroove);
-        this.debugObjects.push(leftGroove, rightGroove);
-
-        console.log('[DamperDebug] 정면(XY) 홈 시각화 완료');
     }
 
     /**
