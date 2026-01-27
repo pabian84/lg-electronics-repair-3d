@@ -31,65 +31,50 @@ export class DamperAssemblyService {
      * 댐퍼 어셈블리 노드의 홈 부분을 식별하고 하이라이트 효과를 적용합니다.
      */
     public highlightDamperGroove(): void {
-        if (!this.sceneRoot) {
-            console.error('[DamperDebug] sceneRoot가 초기화되지 않았습니다.');
-            return;
-        }
+        if (!this.sceneRoot) return;
 
-        // 1. 노드 탐색 및 디버깅 로그
         const targetNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE);
+        if (!(targetNode instanceof THREE.Mesh)) return;
 
-        if (!targetNode) {
-            console.warn(`[DamperDebug] 노드를 찾을 수 없음: ${LEFT_DOOR_DAMPER_ASSEMBLY_NODE}`);
-            // 현재 씬의 모든 노드 이름을 출력하여 실제 이름을 확인해봅니다.
-            this.sceneRoot.traverse(n => { if (n.name.includes('DAMPER')) console.log('검색된 유사 노드:', n.name); });
-            return;
-        }
-
-        console.log(`[DamperDebug] 노드 발견: ${targetNode.name}`, targetNode);
-
-        // 2. 로컬 바운딩 박스 계산 (sample.ts 방식 적용)
-        const mesh = targetNode as THREE.Mesh;
-        if (!mesh.geometry) return;
-
+        const mesh = targetNode;
         mesh.geometry.computeBoundingBox();
         const localBox = mesh.geometry.boundingBox!;
-        const center = new THREE.Vector3();
         const size = new THREE.Vector3();
-        localBox.getCenter(center);
+        const center = new THREE.Vector3();
         localBox.getSize(size);
+        localBox.getCenter(center);
 
-        console.log(`[DamperDebug] 로컬 좌표 정보 - Center:`, center, `Size:`, size);
+        // 1. 좌/우 홈의 규격 정의 (사용자 이미지 기반 비대칭 설정)
+        // 왼쪽 (작은 홈): 전체 폭의 약 15%, 오른쪽 (큰 홈): 전체 폭의 약 25%
+        const leftWidth = size.x * 0.15;
+        const rightWidth = size.x * 0.25;
+        const grooveDepth = size.z * 0.3; // 앞뒤 깊이는 동일하게 30% 가정
 
-        // 3. 디버그 시각화 생성 (녹색 박스: 선택된 노드 전체 영역)
-        const debugBoxGeom = new THREE.BoxGeometry(size.x, size.y, size.z);
-        const debugBox = new THREE.Mesh(debugBoxGeom, new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true, transparent: true, opacity: 0.3 }));
+        // 2. 개별 홈 생성을 위한 헬퍼 함수
+        const createBorder = (width: number, depth: number, offsetX: number, color: number) => {
+            const geom = new THREE.PlaneGeometry(width, depth);
+            const edges = new THREE.EdgesGeometry(geom);
+            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color, linewidth: 2 }));
 
-        // 4. 홈(Groove) 테두리 생성 (노란색)
-        const innerWidth = size.x * 0.3;
-        const innerDepth = size.z * 0.3;
-        const grooveGeom = new THREE.PlaneGeometry(innerWidth, innerDepth);
-        const grooveBorder = new THREE.LineSegments(
-            new THREE.EdgesGeometry(grooveGeom),
-            new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2 })
-        );
+            line.rotation.x = -Math.PI / 2; // 평면 눕히기
+            line.position.copy(center);
+            line.position.x += offsetX;      // 좌우 오프셋 적용
+            line.position.y += size.y / 2 + 0.002; // 표면보다 살짝 위
 
-        // 5. 중심점 표시 (빨간색 구)
-        const centerMarker = new THREE.Mesh(new THREE.SphereGeometry(size.x * 0.05), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+            line.applyMatrix4(mesh.matrixWorld); // 월드 좌표 변환
+            return line;
+        };
 
-        // 6. 모든 객체에 월드 좌표계 적용 (가장 중요)
-        [debugBox, grooveBorder, centerMarker].forEach(obj => {
-            obj.position.copy(center);
-            if (obj === grooveBorder) {
-                obj.rotation.x = -Math.PI / 2;
-                obj.position.y += size.y / 2 + 0.001; // 상단 표면 배치
-            }
-            obj.applyMatrix4(mesh.matrixWorld); // 부모의 변환 정보를 그대로 적용
-            this.sceneRoot?.add(obj);
-            this.debugObjects.push(obj);
-        });
+        // 3. 왼쪽 작은 홈 (노란색) & 오른쪽 큰 홈 (하늘색) 생성
+        // offsetX 계산: 중심에서 좌우로 일정 거리만큼 이동
+        const leftGroove = createBorder(leftWidth, grooveDepth, -size.x * 0.2, 0xffff00);
+        const rightGroove = createBorder(rightWidth, grooveDepth, size.x * 0.2, 0x00ffff);
 
-        console.log('[DamperDebug] 시각화 객체 3종(박스, 테두리, 점)이 씬에 추가되었습니다.');
+        // 4. 씬에 추가 및 관리
+        this.sceneRoot.add(leftGroove, rightGroove);
+        this.debugObjects.push(leftGroove, rightGroove);
+
+        console.log(`[DamperDebug] 비대칭 홈 생성 완료: 좌(${leftWidth.toFixed(2)}), 우(${rightWidth.toFixed(2)})`);
     }
 
     /**
