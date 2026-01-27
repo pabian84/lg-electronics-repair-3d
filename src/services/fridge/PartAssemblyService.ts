@@ -106,8 +106,8 @@ export class PartAssemblyService {
 
 
         // [Modified] 캐시된 바운딩 박스 사용으로 변경
-        const sourceBox = this.getBoundingBoxCached(sourceNode);
-        const targetBox = this.getBoundingBoxCached(targetNode);
+        // const sourceBox = this.getBoundingBoxCached(sourceNode);
+        // const targetBox = this.getBoundingBoxCached(targetNode);
 
         // 디버깅용 로그 (계획서 요구사항)
         console.log('[Debug] 소스 월드 위치:', sourceNode.getWorldPosition(new THREE.Vector3()));
