@@ -27,31 +27,126 @@ export class DamperAssemblyService {
         console.log('[DamperAssemblyService] 초기화 완료');
     }
 
+    // DamperAssemblyService.ts 내 highlightDamperGroove 또는 addDebugPlane 수정 부분
+
+    private addDebugPlane(
+        center: THREE.Vector3, // 이 center는 localBox 기반의 로컬 좌표입니다.
+        width: number,
+        height: number,
+        faceColor: number,
+        edgeOpacity: number,
+        isSmallGroove: boolean,
+        targetMesh: THREE.Mesh // [수정] 부모 메쉬의 MatrixWorld를 적용하기 위해 추가
+    ): void {
+        if (!this.sceneRoot) return;
+
+        const geometry = new THREE.PlaneGeometry(width, height);
+        const material = new THREE.MeshBasicMaterial({
+            color: faceColor,
+            transparent: true,
+            opacity: 0.2,
+            side: THREE.DoubleSide,
+            depthTest: false // 다른 물체에 가려지지 않게 설정
+        });
+
+        const planeMesh = new THREE.Mesh(geometry, material);
+
+        // [중요 1] 로컬 좌표를 월드 좌표로 변환
+        // 단순히 position.copy(center)만 하면 안 되고, 부모의 matrixWorld를 곱해야 합니다.
+        planeMesh.position.copy(center);
+
+        // [중요 2] Z-축 오프셋 추가
+        // 모델의 면과 겹쳐서 깜빡이는 현상(Z-fighting)을 방지하기 위해 정면으로 살짝 밀어줍니다.
+        planeMesh.position.z += 0.005;
+
+        // 부모 메쉬의 월드 행렬을 적용하여 정확한 위치와 회전값 설정
+        planeMesh.applyMatrix4(targetMesh.matrixWorld);
+
+        // 2. 테두리 (EdgesGeometry)
+        const edgesGeometry = new THREE.EdgesGeometry(geometry);
+        const edgesMaterial = new THREE.LineBasicMaterial({
+            color: faceColor,
+            transparent: true,
+            opacity: edgeOpacity,
+            depthTest: false
+        });
+        const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+
+        // 테두리도 면과 동일한 위치/회전 적용
+        edges.position.copy(planeMesh.position);
+        edges.quaternion.copy(planeMesh.quaternion);
+        edges.scale.copy(planeMesh.scale);
+
+        // [애니메이션 로직은 기존과 동일]
+        if (isSmallGroove) {
+            gsap.to([material, edgesMaterial], {
+                opacity: 0.8,
+                duration: 0.6,
+                repeat: -1,
+                yoyo: true,
+                ease: "power2.inOut"
+            });
+        }
+
+        this.debugObjects.push(planeMesh, edges);
+        this.sceneRoot.add(planeMesh);
+        this.sceneRoot.add(edges);
+    }
+
     /**
      * 댐퍼 어셈블리의 정면(XY) 홈 영역을 분석하여 시각화합니다.
      */
     public highlightDamperGroove(): void {
+        console.log('highlightDamperGroove!!!');
         if (!this.sceneRoot) return;
 
         const targetNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE);
         if (!(targetNode instanceof THREE.Mesh)) return;
 
-        // 1. 기존 디버그 객체 제거
+        // 1. 기존 디버그 객체 및 하이라이트 제거
         this.clearHighlights();
 
-        // 2. 정점 분석 함수 호출 (이 함수에서 정확한 좌/우 영역의 Box3를 반환합니다)
+        // 2. 홈 영역 정점 분석 (Groove Bounds 계산)
         const grooveBounds = this.findGrooveBounds(targetNode);
         if (!grooveBounds) {
-            console.warn('[DamperDebug] 홈 영역을 분석할 수 없습니다.');
+            console.warn('[LG CNS] 홈 영역을 분석할 수 없습니다.');
             return;
         }
 
-        // 3. 분석된 결과(leftBox, rightBox)를 바탕으로 테두리 생성
-        const maxZ = targetNode.geometry.boundingBox!.max.z;
-        this.createBorderFromBox(targetNode, grooveBounds.left, 0xffff00, maxZ);  // 왼쪽 (노란색)
-        this.createBorderFromBox(targetNode, grooveBounds.right, 0x00ffff, maxZ); // 오른쪽 (하늘색)
+        // 3. 분석된 Box3 데이터를 기반으로 하이라이트 평면 및 애니메이션 생성
+        // 3.1 왼쪽 작은 홈 (노란색 + 하이라이트 애니메이션 추가)
+        const leftCenter = new THREE.Vector3();
+        grooveBounds.left.getCenter(leftCenter);
+        const leftSize = new THREE.Vector3();
+        grooveBounds.left.getSize(leftSize);
 
-        console.log('[DamperDebug] 정점 분석 기반 홈 시각화 완료');
+        this.addDebugPlane(
+            leftCenter,
+            leftSize.x,
+            leftSize.y,
+            0xffff00,
+            1.0,
+            true,
+            targetNode // [추가] targetNode를 전달하여 월드 좌표 변환 수행
+        );
+
+        // 3.2 오른쪽 큰 홈 (하늘색)
+        const rightCenter = new THREE.Vector3();
+        grooveBounds.right.getCenter(rightCenter);
+        const rightSize = new THREE.Vector3();
+        grooveBounds.right.getSize(rightSize);
+
+        this.addDebugPlane(
+            rightCenter,
+            rightSize.x,
+            rightSize.y,
+            0x00ffff,
+            0.8,
+            false,
+            targetNode // [추가] targetNode를 전달하여 월드 좌표 변환 수행
+        );
+
+        console.log('[LG CNS] 작은 홈 하이라이트 및 전체 시각화 완료');
     }
 
     /**
