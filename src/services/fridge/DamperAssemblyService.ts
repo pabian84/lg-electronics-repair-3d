@@ -20,6 +20,7 @@ export class DamperAssemblyService {
     // 이 클래스는 간단한 상태 관리만 담당
     private sceneRoot: THREE.Object3D | null = null;
     private activeHighlights: THREE.LineSegments[] = [];
+    private debugObjects: THREE.Object3D[] = [];
 
     public initialize(sceneRoot: THREE.Object3D): void {
         this.sceneRoot = sceneRoot;
@@ -60,6 +61,12 @@ export class DamperAssemblyService {
         // X, Z축 기준 전체 너비의 중앙 30% 영역 안에 있고, Y축 기준 상단에 위치한 엣지만 추출
         const innerBoundX = size.x * 0.15; // 중앙으로부터 좌우 15% (총 30%)
         const innerBoundZ = size.z * 0.15; // 중앙으로부터 앞뒤 15% (총 30%)
+
+        // =====================================================
+        // [시각화] 중앙 영역 및 innerBound 범위 디버그 시각화
+        // =====================================================
+        this.createDebugVisualizations(mesh, localBox, center, size, innerBoundX, innerBoundZ);
+        // =====================================================
 
         const edgesGeom = new THREE.EdgesGeometry(geometry, 25);
         const posAttr = edgesGeom.attributes.position;
@@ -117,6 +124,131 @@ export class DamperAssemblyService {
             if (line.material instanceof THREE.Material) line.material.dispose();
         });
         this.activeHighlights = [];
+
+        // 디버그 객체들도 제거
+        this.debugObjects.forEach((obj) => {
+            this.sceneRoot?.remove(obj);
+            if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material instanceof THREE.Material) obj.material.dispose();
+            }
+        });
+        this.debugObjects = [];
+    }
+
+    /**
+     * [시각화] 바운딩 박스 중앙 영역 및 innerBound 범위를 디버그용으로 시각화
+     */
+    private createDebugVisualizations(
+        mesh: THREE.Mesh,
+        localBox: THREE.Box3,
+        center: THREE.Vector3,
+        size: THREE.Vector3,
+        innerBoundX: number,
+        innerBoundZ: number
+    ): void {
+        // 1. 전체 바운딩 박스 (녹색 - 50% 투명)
+        const boxGeometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+        const boxMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
+            transparent: true,
+            opacity: 0.1,
+            wireframe: false
+        });
+        const boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
+        boxMesh.position.copy(center);
+        boxMesh.position.applyMatrix4(mesh.matrixWorld);
+        boxMesh.quaternion.copy(mesh.quaternion);
+        boxMesh.scale.copy(mesh.scale);
+        boxMesh.updateMatrixWorld(true);
+
+        // 바운딩 박스 외곽선 (녹색 실선)
+        const boxEdges = new THREE.EdgesGeometry(boxGeometry);
+        const boxLineMat = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 });
+        const boxLines = new THREE.LineSegments(boxEdges, boxLineMat);
+        boxLines.position.copy(boxMesh.position);
+        boxLines.quaternion.copy(boxMesh.quaternion);
+        boxLines.scale.copy(boxMesh.scale);
+        boxLines.updateMatrixWorld(true);
+
+        // 2. innerBound 영역 (파란색 - XZ 평면 중앙 30%)
+        const innerWidth = innerBoundX * 2; // 좌우 15%씩이므로 총 30%
+        const innerDepth = innerBoundZ * 2; // 앞뒤 15%씩이므로 총 30%
+        const innerHeight = size.y; // 전체 높이
+
+        const innerBoxGeometry = new THREE.BoxGeometry(innerWidth, innerHeight, innerDepth);
+        const innerBoxMaterial = new THREE.MeshBasicMaterial({
+            color: 0x0000ff,
+            transparent: true,
+            opacity: 0.15,
+            wireframe: false
+        });
+        const innerBoxMesh = new THREE.Mesh(innerBoxGeometry, innerBoxMaterial);
+        innerBoxMesh.position.copy(center);
+        innerBoxMesh.position.applyMatrix4(mesh.matrixWorld);
+        innerBoxMesh.quaternion.copy(mesh.quaternion);
+        innerBoxMesh.scale.copy(mesh.scale);
+        innerBoxMesh.updateMatrixWorld(true);
+
+        // innerBound 외곽선 (파란색 실선)
+        const innerBoxEdges = new THREE.EdgesGeometry(innerBoxGeometry);
+        const innerBoxLineMat = new THREE.LineBasicMaterial({ color: 0x0088ff, transparent: true, opacity: 0.8 });
+        const innerBoxLines = new THREE.LineSegments(innerBoxEdges, innerBoxLineMat);
+        innerBoxLines.position.copy(innerBoxMesh.position);
+        innerBoxLines.quaternion.copy(innerBoxMesh.quaternion);
+        innerBoxLines.scale.copy(innerBoxMesh.scale);
+        innerBoxLines.updateMatrixWorld(true);
+
+        // 3. 중심점 (빨간색 구 - 바운딩 박스 크기의 0.2%)
+        const centerRadius = Math.min(size.x, size.y, size.z) * 0.002;
+        const centerGeometry = new THREE.SphereGeometry(centerRadius, 16, 16);
+        const centerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const centerPoint = new THREE.Mesh(centerGeometry, centerMaterial);
+        centerPoint.position.copy(center);
+        centerPoint.position.applyMatrix4(mesh.matrixWorld);
+        centerPoint.updateMatrixWorld(true);
+
+        // 4. innerBound 경계면 표시 (XZ 평면)
+        // innerBoundX 경계선 (좌우)
+        const boundaryXGeometry = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(-innerBoundX, size.y / 2, -innerBoundZ),
+            new THREE.Vector3(-innerBoundX, size.y / 2, innerBoundZ),
+            new THREE.Vector3(innerBoundX, size.y / 2, -innerBoundZ),
+            new THREE.Vector3(innerBoundX, size.y / 2, innerBoundZ),
+        ]);
+        const boundaryXMaterial = new THREE.LineBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.6 });
+        const boundaryXLines = new THREE.LineSegments(boundaryXGeometry, boundaryXMaterial);
+        boundaryXLines.position.copy(center);
+        boundaryXLines.position.applyMatrix4(mesh.matrixWorld);
+        boundaryXLines.quaternion.copy(mesh.quaternion);
+        boundaryXLines.scale.copy(mesh.scale);
+        boundaryXLines.updateMatrixWorld(true);
+
+        // innerBoundZ 경계선 (앞뒤)
+        const boundaryZGeometry = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(-innerBoundX, size.y / 2, -innerBoundZ),
+            new THREE.Vector3(innerBoundX, size.y / 2, -innerBoundZ),
+            new THREE.Vector3(-innerBoundX, size.y / 2, innerBoundZ),
+            new THREE.Vector3(innerBoundX, size.y / 2, innerBoundZ),
+        ]);
+        const boundaryZLines = new THREE.LineSegments(boundaryZGeometry, boundaryXMaterial);
+        boundaryZLines.position.copy(center);
+        boundaryZLines.position.applyMatrix4(mesh.matrixWorld);
+        boundaryZLines.quaternion.copy(mesh.quaternion);
+        boundaryZLines.scale.copy(mesh.scale);
+        boundaryZLines.updateMatrixWorld(true);
+
+        // 모든 디버그 객체添加到 scene과 리스트
+        this.debugObjects.push(boxMesh, boxLines, innerBoxMesh, innerBoxLines, centerPoint, boundaryXLines, boundaryZLines);
+        this.debugObjects.forEach(obj => this.sceneRoot?.add(obj));
+
+        console.log('[DamperAssemblyService] 디버그 시각화 생성:', {
+            전체박스: { size: `(${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)})` },
+            중심점: `(${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)})`,
+            innerBoundX: innerBoundX.toFixed(2),
+            innerBoundZ: innerBoundZ.toFixed(2),
+            내부박스: { size: `(${innerWidth.toFixed(2)}, ${innerHeight.toFixed(2)}, ${innerDepth.toFixed(2)})` }
+        });
     }
 
     public dispose(): void {
