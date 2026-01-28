@@ -123,22 +123,20 @@ export class DamperAssemblyService {
      */
     public highlightClosestFace(camera: THREE.Camera): void {
         console.log('highlightClosestFace - 카메라 기준 가장 가까운 면');
-        if (!this.sceneRoot || !this.stencilHighlight) return;
+        if (!this.sceneRoot || !this.normalHighlight) return;
 
         const targetNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE);
         if (!targetNode) return;
 
         this.clearHighlights();
 
-        /* // 카메라 필터링 + 메쉬 클론 + Stencil Buffer 방식 사용
-        this.stencilHighlight.createGrooveMeshHighlightWithCameraFilter(
+        // 카메라 필터링 + EdgesGeometry 방식 사용 (NormalBasedHighlight)
+        this.normalHighlight.highlightFacesByCameraFilter(
             targetNode,
             camera,
             0xff6600,  // 주황색
             15         // thresholdAngle: 15도
-        ); */
-
-        this.highlightDamperGroove();
+        );
 
         console.log('[LG CNS] 가장 가까운 면 하이라이트 완료');
     }
@@ -150,15 +148,15 @@ export class DamperAssemblyService {
      */
     public highlightDamperGroove(): void {
         console.log('highlightDamperGroove - Mesh Clone + Stencil Buffer 방식');
-        if (!this.sceneRoot || !this.stencilHighlight) return;
+        if (!this.sceneRoot || !this.normalHighlight) return;
 
         const targetNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE);
         if (!targetNode) return;
 
         this.clearHighlights();
 
-        // [신규] 법선 필터링 + 메쉬 클론 + Stencil Buffer 방식 사용
-        this.stencilHighlight.createGrooveMeshHighlightWithNormalFilter(
+        // [신규] 법선 필터링 + 메쉬 클론 + EdgesGeometry 방식 사용 (NormalBasedHighlight)
+        this.normalHighlight.highlightFacesByNormalFilter(
             targetNode,
             0xff00ff,  // 마젠타 색상
             15,        // thresholdAngle: 15도 이상 각도 변화가 있는 모서리
@@ -166,7 +164,7 @@ export class DamperAssemblyService {
             0.2        // normalTolerance: 20% 허용 오차
         );
 
-        console.log('[LG CNS] 메쉬 클론 + Stencil Buffer 기반 홈 하이라이트 완료');
+        console.log('[LG CNS] 법선 필터링 기반 홈 하이라이트 완료');
     }
 
     /**
