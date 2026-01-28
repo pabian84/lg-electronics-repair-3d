@@ -394,12 +394,27 @@ export class ManualAssemblyManager {
         );
 
         // 5. [Assembly 분석] 결합 홈(Hole) 탐지 - 다중 홈 탐지 적용
-        const holeAnalyses = GrooveDetectionUtils.calculateMultipleVirtualPivotsByNormalAnalysis(
+        const holeAnalysesRaw = GrooveDetectionUtils.calculateMultipleVirtualPivotsByNormalAnalysis(
             assemblyNode,
             new THREE.Vector3(0, 0, 1),
-            0.6,
-            0.02 // [수정] 3cm에서 2cm로 더 정밀하게 조정 (작은 홈 분리 탐지 강화)
+            0.2, // [수정] 0.6에서 0.2로 대폭 강화 (평면도가 높은 면만 추출)
+            0.005 // [수정] 2cm에서 5mm로 대폭 축소 (홈 바닥과 모델 윗면 분리 유도)
         );
+
+        // [추가] 너무 큰 클러스터(모델 윗면 등) 제외 로직
+        // 홈은 보통 작으므로, 전체 바운딩 박스 크기의 일정 비율 이상인 클러스터는 제외
+        const assemblyBox = new THREE.Box3().setFromObject(assemblyNode);
+        const assemblySize = new THREE.Vector3();
+        assemblyBox.getSize(assemblySize);
+        const maxHoleSize = Math.max(assemblySize.x, assemblySize.y, assemblySize.z) * 0.5;
+
+        const holeAnalyses = holeAnalysesRaw.filter(analysis => {
+            // 클러스터의 정점 수나 범위를 체크 (여기서는 간단히 로그 출력 후 필터링)
+            console.log(`[Assembly] 탐지된 클러스터: 위치(${analysis.position.x.toFixed(3)}, ${analysis.position.y.toFixed(3)}), 정점수: ${analysis.filteredVerticesCount}`);
+
+            // 너무 넓게 퍼진 클러스터는 홈이 아닐 가능성이 높음 (임시로 정점 수로 제한하거나 그대로 둠)
+            return analysis.filteredVerticesCount < 5000; // 예: 너무 거대한 면은 제외
+        });
 
         let targetPosition = new THREE.Vector3();
         let plugWorldPos: THREE.Vector3 | null = null;
@@ -409,19 +424,19 @@ export class ManualAssemblyManager {
         if (plugAnalyses.length > 0 && holeAnalyses.length > 0) {
             console.log(`[Assembly] Auto-Snap: 탐지 결과 - Plug: ${plugAnalyses.length}개, Hole: ${holeAnalyses.length}개`);
 
-            // [개선] 돌출부(Plug) 중 가장 유의미한 것 선택 (보통 정점 수가 적당하고 중심에 가까운 것)
-            // 여기서는 단순화를 위해 가장 많은 정점을 가진 클러스터를 메인 Plug로 간주
-            const primaryPlug = plugAnalyses.sort((a, b) => b.filteredVerticesCount - a.filteredVerticesCount)[0];
+            // [개선] 돌출부(Plug) 중 가장 유의미한 것 선택
+            // 정점 수가 너무 많지 않은(거대 평면이 아닌) 것 중 선택
+            const validPlugs = plugAnalyses.filter(p => p.filteredVerticesCount < 2000);
+            const primaryPlug = validPlugs.length > 0
+                ? validPlugs.sort((a, b) => b.filteredVerticesCount - a.filteredVerticesCount)[0]
+                : plugAnalyses[0];
+
             plugWorldPos = primaryPlug.position;
 
             // 모든 홈 위치 수집
             holeWorldPositions = holeAnalyses.map(a => a.position);
 
-            // [개선] 여러 홈 중 Plug와 가장 가까운 홈을 기준으로 조립 (또는 첫 번째)
-            // 현재 coverNode의 위치에서 plugWorldPos를 뺀 상대 좌표를 고려하여 가장 가까운 hole 선택
-            const currentCoverWorldPos = new THREE.Vector3();
-            coverNode.getWorldPosition(currentCoverWorldPos);
-
+            // [개선] 여러 홈 중 Plug와 가장 가까운 홈을 기준으로 조립
             const primaryHoleWorldPos = holeWorldPositions.sort((a, b) => {
                 const distA = a.distanceTo(plugWorldPos!);
                 const distB = b.distanceTo(plugWorldPos!);

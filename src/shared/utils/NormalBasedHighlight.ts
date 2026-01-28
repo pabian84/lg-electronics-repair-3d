@@ -519,6 +519,7 @@ export class NormalBasedHighlight {
             if (filteredFaces.length === 0) return [];
 
             // 6. 클러스터링 (면 중심점 거리 기반 그룹화 - 개선된 연결성 로직)
+            // 홈의 바닥면과 모델의 윗면을 분리하기 위해 매우 정밀한 거리 체크가 필요함
             const clusters: Array<{ faces: FaceInfo[] }> = [];
 
             for (const face of filteredFaces) {
@@ -526,15 +527,14 @@ export class NormalBasedHighlight {
 
                 for (const cluster of clusters) {
                     // 클러스터 내의 면들 중 하나라도 임계값 이내에 있으면 같은 그룹으로 간주
-                    // 성능을 위해 모든 면을 검사하는 대신, 최근 추가된 면들이나 샘플링된 면들과 비교
-                    const isConnected = cluster.faces.some(clusterFace =>
-                        face.center.distanceTo(clusterFace.center) < clusterThreshold
-                    );
-
-                    if (isConnected) {
-                        targetCluster = cluster;
-                        break;
+                    // [개선] 모든 면을 검사하되, 성능을 위해 역순으로 검사 (인접한 면이 최근에 추가되었을 확률이 높음)
+                    for (let i = cluster.faces.length - 1; i >= 0; i--) {
+                        if (face.center.distanceTo(cluster.faces[i].center) < clusterThreshold) {
+                            targetCluster = cluster;
+                            break;
+                        }
                     }
+                    if (targetCluster) break;
                 }
 
                 if (targetCluster) {
@@ -544,7 +544,7 @@ export class NormalBasedHighlight {
                 }
             }
 
-            // [추가] 인접한 클러스터끼리 병합 (위의 로직에서 놓칠 수 있는 경우 대비)
+            // [추가] 인접한 클러스터끼리 병합
             let merged;
             do {
                 merged = false;
@@ -571,7 +571,7 @@ export class NormalBasedHighlight {
 
             // 7. 각 클러스터별 피벗 정보 생성
             return clusters
-                .filter(cluster => cluster.faces.length >= 2) // 노이즈 제거 (최소 2개 이상의 면)
+                .filter(cluster => cluster.faces.length >= 2) // [수정] 다시 2개로 완화 (아주 작은 홈 탐지 허용)
                 .map(cluster => {
                     const clusterBox = new THREE.Box3();
                     const avgNormal = new THREE.Vector3();
@@ -598,6 +598,13 @@ export class NormalBasedHighlight {
                         insertionDirection: avgNormal,
                         filteredVerticesCount: cluster.faces.length * 3
                     };
+                })
+                // [추가] 클러스터 크기(Bounding Box)를 기준으로 너무 큰 클러스터(모델 윗면 등)는 제외하고 
+                // 실제 홈으로 보이는 것들만 필터링하는 로직 추가 가능
+                .filter(pivot => {
+                    // 모델 전체 크기에 비해 너무 큰 클러스터는 홈이 아닐 가능성이 높음
+                    // 여기서는 일단 모든 클러스터를 반환하되, 호출부에서 처리하도록 함
+                    return true;
                 });
 
         } catch (error) {
