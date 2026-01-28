@@ -208,11 +208,20 @@ export class ManualAssemblyManager {
             // --- [시각적 디버깅용 붉은 구체 생성] ---
             // 이 구체가 분홍색 노드 중앙에 생기는지 확인하세요. 엉뚱한 곳에 있다면 GrooveUtils 문제.
 
-            const debugGeom = new THREE.SphereGeometry(0.5, 16, 16);
-            const debugMat = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: false, transparent: true, opacity: 0.8 });
+            const debugRadius = 0.0005; // 모델 크기에 맞춰 0.01 ~ 0.05 사이로 조정해 보세요.
+            const debugGeom = new THREE.SphereGeometry(debugRadius, 16, 16);
+
+            const debugMat = new THREE.MeshBasicMaterial({
+                color: 0xff0000,
+                depthTest: false,
+                transparent: true,
+                opacity: 0.8
+            });
+
             const debugSphere = new THREE.Mesh(debugGeom, debugMat);
             debugSphere.position.copy(grooveCenter);
-            debugSphere.renderOrder = 999; // 다른 물체보다 위에 그림
+            debugSphere.renderOrder = 999;
+
             this.sceneRoot.add(debugSphere);
             console.log('디버깅용 붉은 구체 생성됨:', grooveCenter);
 
