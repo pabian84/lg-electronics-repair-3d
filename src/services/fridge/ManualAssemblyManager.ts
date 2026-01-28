@@ -237,7 +237,9 @@ export class ManualAssemblyManager {
 
             // 5. 로컬 좌표 및 회전값 변환 (World -> Local)
             const targetLocalPos = targetWorldPos.clone();
-            const targetLocalQuat = targetWorldQuat.clone();
+
+            // [수정] 회전은 변경하지 않고 현재 회전을 유지하도록 설정 (to-be.png의 비정상 회전 방지)
+            const targetLocalQuat = damperCover.quaternion.clone();
 
             if (damperCover.parent) {
                 // [보정] 부모의 월드 행렬을 최신화한 후 좌표 변환 수행
@@ -254,28 +256,15 @@ export class ManualAssemblyManager {
 
             // 6. 애니메이션 실행 (GSAP)
             const duration = options?.duration || 1500;
-            const startQuat = damperCover.quaternion.clone();
-            const tempObj = { t: 0 };
 
             await new Promise<void>((resolve) => {
-                // 위치 이동
+                // 위치 이동만 수행 (회전 애니메이션 제거)
                 gsap.to(damperCover.position, {
                     x: targetLocalPos.x,
                     y: targetLocalPos.y,
-                    z: targetLocalPos.z,
-                    duration: duration / 1000,
-                    ease: "power2.inOut"
-                });
-
-                // [수정] 회전 보간 (TypeScript 에러 해결)
-                gsap.to(tempObj, {
-                    t: 1,
+                    // z: targetLocalPos.z,
                     duration: duration / 1000,
                     ease: "power2.inOut",
-                    onUpdate: () => {
-                        // THREE.Quaternion.slerp 대신 slerpQuaternions 사용
-                        damperCover.quaternion.slerpQuaternions(startQuat, targetLocalQuat, tempObj.t);
-                    },
                     onComplete: () => {
                         console.log('[ManualAssemblyManager] 조립 완료');
                         options?.onComplete?.();
