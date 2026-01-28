@@ -178,18 +178,18 @@ export class ManualAssemblyManager {
         this.clearDebugObjects();
 
         if (!this.sceneRoot) return;
-
-        // 1. 시작 위치 (빨간 구)
-        const startGeometry = new THREE.SphereGeometry(0.0005, 16, 16);
-        const startMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const ellipse = 0.0005;
+        // 1. 시작 위치 (빨간 구) - depthTest: false로 항상前面에 렌더링
+        const startGeometry = new THREE.SphereGeometry(ellipse, 16, 16);
+        const startMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: false });
         const startPoint = new THREE.Mesh(startGeometry, startMaterial);
         startPoint.position.copy(startPosition);
         this.debugObjects.push(startPoint);
         this.sceneRoot.add(startPoint);
 
         // 2. 종료 위치 (초록 구)
-        const endGeometry = new THREE.SphereGeometry(0.0005, 16, 16);
-        const endMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const endGeometry = new THREE.SphereGeometry(ellipse, 16, 16);
+        const endMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, depthTest: false });
         const endPoint = new THREE.Mesh(endGeometry, endMaterial);
         endPoint.position.copy(endPosition);
         this.debugObjects.push(endPoint);
@@ -202,7 +202,8 @@ export class ManualAssemblyManager {
             color: 0xffff00,
             dashSize: 0.05,
             gapSize: 0.02,
-            linewidth: 2
+            linewidth: 2,
+            depthTest: false
         });
         const pathLine = new THREE.Line(pathGeometry, pathMaterial);
         pathLine.computeLineDistances(); // 점선 계산을 위해 필요
@@ -211,8 +212,8 @@ export class ManualAssemblyManager {
 
         // 4. 돌출부 위치 (파란색 구)
         if (plugPosition) {
-            const plugGeometry = new THREE.SphereGeometry(0.0005, 16, 16);
-            const plugMaterial = new THREE.MeshBasicMaterial({ color: 0x0088ff });
+            const plugGeometry = new THREE.SphereGeometry(ellipse, 16, 16);
+            const plugMaterial = new THREE.MeshBasicMaterial({ color: 0x0088ff, depthTest: false });
             const plugPoint = new THREE.Mesh(plugGeometry, plugMaterial);
             plugPoint.position.copy(plugPosition);
             this.debugObjects.push(plugPoint);
@@ -222,7 +223,7 @@ export class ManualAssemblyManager {
             const plugToStart = new THREE.BufferGeometry().setFromPoints([plugPosition, startPosition]);
             const plugToStartLine = new THREE.Line(
                 plugToStart,
-                new THREE.LineBasicMaterial({ color: 0x0088ff, transparent: true, opacity: 0.5 })
+                new THREE.LineBasicMaterial({ color: 0x0088ff, transparent: true, opacity: 0.5, depthTest: false })
             );
             this.debugObjects.push(plugToStartLine);
             this.sceneRoot.add(plugToStartLine);
@@ -230,8 +231,8 @@ export class ManualAssemblyManager {
 
         // 5. 홈 위치 (마젠타색 구)
         if (holePosition) {
-            const holeGeometry = new THREE.SphereGeometry(0.0005, 16, 16);
-            const holeMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+            const holeGeometry = new THREE.SphereGeometry(ellipse, 16, 16);
+            const holeMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff, depthTest: false });
             const holePoint = new THREE.Mesh(holeGeometry, holeMaterial);
             holePoint.position.copy(holePosition);
             this.debugObjects.push(holePoint);
@@ -241,13 +242,13 @@ export class ManualAssemblyManager {
             const holeToEnd = new THREE.BufferGeometry().setFromPoints([holePosition, endPosition]);
             const holeToEndLine = new THREE.Line(
                 holeToEnd,
-                new THREE.LineBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.5 })
+                new THREE.LineBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.5, depthTest: false })
             );
             this.debugObjects.push(holeToEndLine);
             this.sceneRoot.add(holeToEndLine);
         }
 
-        // 6. 이동 벡터 화살표
+        // 6. 이동 벡터 화살표, 노란색 (depthTest: false 추가)
         const direction = new THREE.Vector3().subVectors(endPosition, startPosition);
         const arrowHelper = new THREE.ArrowHelper(
             direction.normalize(),
@@ -255,6 +256,17 @@ export class ManualAssemblyManager {
             direction.length(),
             0xffff00
         );
+        // ArrowHelper의 라인材质에 depthTest: false 적용
+        const arrowMaterials = Array.isArray(arrowHelper.line.material)
+            ? arrowHelper.line.material
+            : [arrowHelper.line.material];
+        arrowMaterials.forEach(mat => { mat.depthTest = false; mat.depthWrite = false; });
+
+        const coneMaterials = Array.isArray(arrowHelper.cone.material)
+            ? arrowHelper.cone.material
+            : [arrowHelper.cone.material];
+        coneMaterials.forEach(mat => { mat.depthTest = false; mat.depthWrite = false; });
+
         this.debugObjects.push(arrowHelper);
         this.sceneRoot.add(arrowHelper);
 
