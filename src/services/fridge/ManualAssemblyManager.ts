@@ -235,6 +235,8 @@ export class ManualAssemblyManager {
                 virtualPivot.position,
                 coverPivot.position
             );
+            worldOffset.y = 0;
+            console.log('[ManualAssemblyManager] 월드 오프셋:', worldOffset);
 
             // 현재 커버의 월드 위치에 해당 오프셋을 더해 최종 월드 위치 계산
             const currentWorldPos = new THREE.Vector3();
