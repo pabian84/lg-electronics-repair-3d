@@ -1,0 +1,49 @@
+{
+    "version": "1.0.0",
+    "lastUpdated": "2026-01-28",
+    "assemblies": {
+        "damper_cover_assembly": {
+            "targetNode": "ACV74674704_Damper_Assembly_13473",
+            "partNode": "MCK71751101_Cover,Body_3117001",
+            "grooveDetection": {
+                "method": "bounding_box",
+                "innerBoundRatio": 0.3,
+                "normalFilter": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 1
+                },
+                "normalTolerance": 0.2
+            },
+            "insertion": {
+                "offset": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0.5
+                },
+                "depth": 0.8,
+                "rotationOffset": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                }
+            },
+            "animation": {
+                "duration": 1500,
+                "easing": "power2.inOut",
+                "stages": [
+                    {
+                        "name": "approach",
+                        "progress": 0.7,
+                        "description": "홈 근처까지 접근"
+                    },
+                    {
+                        "name": "insert",
+                        "progress": 1.0,
+                        "description": "홈에 삽입"
+                    }
+                ]
+            }
+        }
+    }
+}

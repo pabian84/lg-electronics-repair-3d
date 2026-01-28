@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import gsap from 'gsap';
 import { PartAssemblyService } from './PartAssemblyService';
 import {
     LEFT_DOOR_DAMPER_COVER_BODY_NODE,
@@ -6,12 +7,13 @@ import {
     DAMPER_COVER_SLOT_OFFSET
 } from '../../shared/utils/fridgeConstants';
 import { getDamperAssemblyService } from '../fridge/DamperAssemblyService';
-import { CameraMovementService } from './CameraMovementService';
 import { StencilOutlineHighlight } from '../../shared/utils/StencilOutlineHighlight';
+import { getMetadataLoader } from '../../shared/utils/MetadataLoader';
+import { GrooveDetectionUtils } from '../../shared/utils/GrooveDetectionUtils';
 
 /**
  * 수동 조립 관리자
- * 조립/분해 관련 함수를集中的 관리
+ * 조립/분해 관련 함수를集中管理
  */
 export class ManualAssemblyManager {
     private partAssemblyService: PartAssemblyService | null = null;
@@ -157,168 +159,138 @@ export class ManualAssemblyManager {
     }
 
     /**
-     * 스텐실 아웃라인 하이라이트 적용
-     * 대상 노드를 카메라 방향 기준으로 필터링하여 하이라이트
-     */
-    private StencilOutlineWithHighlight(activeCamera: THREE.Camera): void {
-        const targetNodeName = LEFT_DOOR_DAMPER_ASSEMBLY_NODE;
-        const targetNode = this.sceneRoot?.getObjectByName(targetNodeName);
-
-        if (targetNode) {
-            // StencilOutlineHighlight 인스턴스 생성 및 초기화
-            const stencilHighlight = new StencilOutlineHighlight();
-            stencilHighlight.initialize(this.sceneRoot!);
-
-            // 카메라 방향 벡터 가져오기
-            const cameraDirection = new THREE.Vector3();
-            activeCamera.getWorldDirection(cameraDirection);
-            cameraDirection.normalize();
-
-            // 대상 노드의 메쉬를 순회하며 필터링
-            const filteredIndices: number[] = [];
-            targetNode.updateMatrixWorld(true);
-
-            targetNode.traverse((child) => {
-                if (child instanceof THREE.Mesh && child.geometry) {
-                    const geometry = child.geometry;
-                    const normals = geometry.attributes.normal;
-                    const indices = geometry.index;
-
-                    if (!normals) {
-                        geometry.computeVertexNormals();
-                    }
-
-                    const worldQuat = new THREE.Quaternion();
-                    child.getWorldQuaternion(worldQuat);
-                    const faceCount = indices ? indices.count / 3 : geometry.attributes.position.count / 3;
-
-                    for (let i = 0; i < faceCount; i++) {
-                        let idx1, idx2, idx3;
-                        if (indices) {
-                            idx1 = indices.getX(i * 3);
-                            idx2 = indices.getX(i * 3 + 1);
-                            idx3 = indices.getX(i * 3 + 2);
-                        } else {
-                            idx1 = i * 3;
-                            idx2 = i * 3 + 1;
-                            idx3 = i * 3 + 2;
-                        }
-
-                        // 평균 법선 계산 (월드 좌표로 변환)
-                        const normal1 = new THREE.Vector3().fromBufferAttribute(normals, idx1).applyQuaternion(worldQuat);
-                        const normal2 = new THREE.Vector3().fromBufferAttribute(normals, idx2).applyQuaternion(worldQuat);
-                        const normal3 = new THREE.Vector3().fromBufferAttribute(normals, idx3).applyQuaternion(worldQuat);
-                        const avgNormal = new THREE.Vector3().addVectors(normal1, normal2).add(normal3).normalize();
-
-                        // 카메라 방향과 내적하여 카메라를 향하는 면 판정
-                        const dotProduct = avgNormal.dot(cameraDirection);
-                        if (dotProduct < -0.3) { // 카메라를 향하는 면
-                            filteredIndices.push(idx1, idx2, idx3);
-                        }
-                    }
-                }
-            });
-
-            // 필터링된 면이 있으면 StencilOutlineHighlight로 하이라이트
-            if (filteredIndices.length > 0) {
-                // 순회 중 발견한 첫 번째 메쉬 사용
-                let originalMesh: THREE.Mesh | null = null;
-                targetNode.traverse((child) => {
-                    if (!originalMesh && child instanceof THREE.Mesh) {
-                        originalMesh = child;
-                    }
-                });
-
-                if (originalMesh) {
-                    stencilHighlight.createFilteredMeshHighlight(
-                        originalMesh,
-                        filteredIndices,
-                        0xff0000, // 빨강색
-                        15,       // thresholdAngle
-                        0.6       // opacity
-                    );
-                    console.log('[ManualAssemblyManager] StencilOutlineHighlight로 하이라이트 적용 완료');
-                }
-            }
-        } else {
-            console.warn('[ManualAssemblyManager] 대상 노드를 찾을 수 없습니다:', targetNodeName);
-        }
-    }
-
-    /**
-     * 댐퍼 커버 조립 (충돌 방지 로직 적용)
+     * 댐퍼 커버 조립 (Bounding Box & Offset + Metadata Mapping 방식)
+     * 더미 노드가 없는 경우, Bounding Box 기반으로 홈을 식별하고 Metadata의 오프셋을 적용합니다.
      * @param options 조립 옵션
-     * @param camera 카메라 객체 (선택사항, 제공되지 않으면 자동 탐색)
+     * @param _camera 카메라 객체 (선택사항, 제공되지 않으면 자동 탐색) - 현재 미사용
      */
     public async assembleDamperCover(
         options?: {
             duration?: number;
             onComplete?: () => void;
         },
-        camera?: THREE.Camera
+        _camera?: THREE.Camera
     ): Promise<void> {
-        if (!this.partAssemblyService || !this.sceneRoot) return;
-
-        console.log('[ManualAssemblyManager] 댐퍼 커버 조립 시작 (충돌 방지 모드)');
-
-        // 댐퍼 홈 하이라이트 활성화 (법선 벡터 기반)
-        // const damperService = getDamperAssemblyService();
-
-        // 카메라 찾기 (매개 변수로 전달받거나 CameraMovementService 사용)
-        let activeCamera: THREE.Camera | null = camera || null;
-        if (!activeCamera && this.sceneRoot) {
-            // CameraMovementService를 통한 카메라 탐색
-            const { CameraMovementService } = await import('./CameraMovementService');
-            const cameraMovementService = new CameraMovementService(this.cameraControls, this.sceneRoot);
-            activeCamera = cameraMovementService.getCamera();
-            console.log('activeCamera000>>> ', activeCamera);
+        if (!this.sceneRoot) {
+            console.warn('[ManualAssemblyManager] sceneRoot가 초기화되지 않았습니다.');
+            return;
         }
 
-        console.log('activeCamera>>> ', activeCamera);
+        console.log('[ManualAssemblyManager] 댐퍼 커버 조립 시작 (Bounding Box & Offset + Metadata Mapping 방식)');
 
-        if (activeCamera) {
-            this.StencilOutlineWithHighlight(activeCamera);
-        } else {
-            console.warn('[ManualAssemblyManager] 하이라이트를 위한 카메라를 찾을 수 없습니다.');
-        }
+        try {
+            // 1. 타겟 노드 찾기
+            const damperAssembly = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE);
+            const damperCover = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_COVER_BODY_NODE);
 
-
-        return;
-
-        const service = this.partAssemblyService;
-        const root = this.sceneRoot;
-        if (!service || !root || !options) return;
-
-        // 1. [Lifting Step] ASSEMBLY 노드를 살짝 들어올려 공간 확보
-        const LIFT_OFFSET = new THREE.Vector3(0, 0, -10);
-        console.log('LIFT_OFFSET>>  ', LIFT_OFFSET);
-
-        await service.movePartRelative(
-            LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
-            LIFT_OFFSET,
-            2000 // 2초 동안 리프팅
-        );
-
-        // 2. [Assembly Step] COVER 노드 선형 이동 (기존 조립 로직)
-        await service.assemblePart(
-            LEFT_DOOR_DAMPER_COVER_BODY_NODE,
-            LEFT_DOOR_DAMPER_ASSEMBLY_NODE, // 타겟 노드
-            {
-                duration: options?.duration || 1000,
+            if (!damperAssembly || !damperCover) {
+                console.error('[ManualAssemblyManager] 노드를 찾을 수 없습니다.');
+                console.error('  - Damper Assembly:', damperAssembly ? 'found' : 'not found');
+                console.error('  - Damper Cover:', damperCover ? 'found' : 'not found');
+                return;
             }
-        );
 
-        // (선택 사항) 3. [Settling Step] 들어올렸던 ASSEMBLY 노드를 다시 원위치로 내리기
-        await service.movePartRelative(
-            LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
-            LIFT_OFFSET.clone().negate(), // 반대 방향으로 이동
-            2000
-        );
+            // 2. 메타데이터 로딩
+            const metadataLoader = getMetadataLoader();
+            const config = await metadataLoader.loadAssemblyConfig('damper_cover_assembly');
 
-        console.log('[ManualAssemblyManager] 댐퍼 커버 조립 완료');
+            if (!config) {
+                console.warn('[ManualAssemblyManager] 메타데이터를 찾을 수 없습니다. 기본값을 사용합니다.');
+            }
 
-        if (options && typeof options.onComplete === 'function') {
-            options.onComplete();
+            // 3. 홈 영역 식별 (Bounding Box 기반)
+            const innerBoundRatio = config?.grooveDetection.innerBoundRatio || 0.3;
+            const grooveCenter = GrooveDetectionUtils.calculateGrooveCenterByBoundingBox(
+                damperAssembly,
+                innerBoundRatio
+            );
+
+            if (!grooveCenter) {
+                console.error('[ManualAssemblyManager] 홈 중심점을 계산할 수 없습니다.');
+                return;
+            }
+
+            console.log('[ManualAssemblyManager] 홈 중심점:', {
+                x: grooveCenter.x.toFixed(2),
+                y: grooveCenter.y.toFixed(2),
+                z: grooveCenter.z.toFixed(2)
+            });
+
+            // 4. 오프셋 적용 (Metadata Mapping) & [수정 2] 회전 반영
+            const insertionOffset = config?.insertion.offset || new THREE.Vector3(0, 0, 0.5);
+
+            // 오프셋 벡터 복사
+            const offsetVector = insertionOffset.clone();
+
+            // [중요] 타겟(Damper Assembly)의 월드 회전값을 가져와 오프셋에 적용
+            const targetQuaternion = new THREE.Quaternion();
+            damperAssembly.getWorldQuaternion(targetQuaternion);
+            offsetVector.applyQuaternion(targetQuaternion);
+
+            // 회전이 적용된 오프셋을 중심점에 더함
+            const targetPosition = grooveCenter.clone().add(offsetVector);
+
+            console.log('[ManualAssemblyManager] 타겟 위치 (오프셋 및 회전 적용):', {
+                x: targetPosition.x.toFixed(2),
+                y: targetPosition.y.toFixed(2),
+                z: targetPosition.z.toFixed(2)
+            });
+
+            // 5. 월드 좌표를 로컬 좌표로 변환
+            const parent = damperCover.parent;
+            let targetLocalPos: THREE.Vector3;
+            if (parent) {
+                const worldToLocalMatrix = parent.matrixWorld.clone().invert();
+                targetLocalPos = targetPosition.clone().applyMatrix4(worldToLocalMatrix);
+            } else {
+                targetLocalPos = targetPosition;
+            }
+
+            console.log('[ManualAssemblyManager] 타겟 로컬 위치:', {
+                x: targetLocalPos.x.toFixed(2),
+                y: targetLocalPos.y.toFixed(2),
+                z: targetLocalPos.z.toFixed(2)
+            });
+
+            // 6. 현재 위치 저장 (디버깅용)
+            const startPos = damperCover.position.clone();
+            console.log('[ManualAssemblyManager] 시작 위치:', {
+                x: startPos.x.toFixed(2),
+                y: startPos.y.toFixed(2),
+                z: startPos.z.toFixed(2)
+            });
+
+            // 7. GSAP 애니메이션으로 삽입
+            const duration = options?.duration || config?.animation.duration || 1500;
+            const easing = config?.animation.easing || 'power2.inOut';
+
+            await new Promise<void>((resolve) => {
+                gsap.to(damperCover.position, {
+                    x: targetLocalPos.x,
+                    y: targetLocalPos.y,
+                    z: targetLocalPos.z,
+                    duration: duration / 1000,
+                    ease: easing,
+                    onUpdate: () => {
+                        // 애니메이션 진행状況 출력 (선택적)
+                        // const progress = damperCover.position.distanceTo(startPos) / targetLocalPos.distanceTo(startPos);
+                    },
+                    onComplete: () => {
+                        console.log('[ManualAssemblyManager] 댐퍼 커버 조립 완료!');
+                        console.log('  - 최종 위치:', {
+                            x: damperCover.position.x.toFixed(2),
+                            y: damperCover.position.y.toFixed(2),
+                            z: damperCover.position.z.toFixed(2)
+                        });
+                        options?.onComplete?.();
+                        resolve();
+                    }
+                });
+            });
+
+        } catch (error) {
+            console.error('[ManualAssemblyManager] 댐퍼 커버 조립 중 오류 발생:', error);
+            throw error;
         }
     }
 }
