@@ -72,9 +72,14 @@ export class StencilOutlineHighlight {
     }
 
     /**
-     * [내부 메서드] 필터링된 영역의 메쉬 클론 + Stencil 하이라이트 생성
+     * 필터링된 영역의 메쉬 클론 + Stencil 하이라이트 생성
+     * @param originalMesh 하이라이트할 원본 메쉬
+     * @param filteredIndices 하이라이트할 면의 인덱스 배열
+     * @param color 하이라이트 색상
+     * @param thresholdAngle 엣지 감지 각도
+     * @param opacity 불투명도
      */
-    private createFilteredMeshHighlight(
+    public createFilteredMeshHighlight(
         originalMesh: THREE.Mesh,
         filteredIndices: number[],
         color: number,

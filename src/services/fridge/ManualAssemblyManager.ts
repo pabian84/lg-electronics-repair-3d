@@ -7,6 +7,7 @@ import {
 } from '../../shared/utils/fridgeConstants';
 import { getDamperAssemblyService } from '../fridge/DamperAssemblyService';
 import { CameraMovementService } from './CameraMovementService';
+import { StencilOutlineHighlight } from '../../shared/utils/StencilOutlineHighlight';
 
 /**
  * 수동 조립 관리자
@@ -172,7 +173,7 @@ export class ManualAssemblyManager {
         console.log('[ManualAssemblyManager] 댐퍼 커버 조립 시작 (충돌 방지 모드)');
 
         // 댐퍼 홈 하이라이트 활성화 (법선 벡터 기반)
-        const damperService = getDamperAssemblyService();
+        // const damperService = getDamperAssemblyService();
 
         // 카메라 찾기 (매개 변수로 전달받거나 CameraMovementService 사용)
         let activeCamera: THREE.Camera | null = camera || null;
@@ -187,7 +188,89 @@ export class ManualAssemblyManager {
         console.log('activeCamera>>> ', activeCamera);
 
         if (activeCamera) {
-            damperService.highlightClosestFace(activeCamera);
+            // StencilOutlineHighlight를 사용한 하이라이트로 대체
+            const targetNodeName = LEFT_DOOR_DAMPER_ASSEMBLY_NODE;
+            const targetNode = this.sceneRoot?.getObjectByName(targetNodeName);
+
+            if (targetNode) {
+                // StencilOutlineHighlight 인스턴스 생성 및 초기화
+                const stencilHighlight = new StencilOutlineHighlight();
+                stencilHighlight.initialize(this.sceneRoot!);
+
+                // 카메라 방향 벡터 가져오기
+                const cameraDirection = new THREE.Vector3();
+                activeCamera.getWorldDirection(cameraDirection);
+                cameraDirection.normalize();
+
+                // 대상 노드의 메쉬를 순회하며 필터링
+                const filteredIndices: number[] = [];
+                targetNode.updateMatrixWorld(true);
+
+                targetNode.traverse((child) => {
+                    if (child instanceof THREE.Mesh && child.geometry) {
+                        const geometry = child.geometry;
+                        const normals = geometry.attributes.normal;
+                        const indices = geometry.index;
+
+                        if (!normals) {
+                            geometry.computeVertexNormals();
+                        }
+
+                        const worldQuat = new THREE.Quaternion();
+                        child.getWorldQuaternion(worldQuat);
+                        const faceCount = indices ? indices.count / 3 : geometry.attributes.position.count / 3;
+
+                        for (let i = 0; i < faceCount; i++) {
+                            let idx1, idx2, idx3;
+                            if (indices) {
+                                idx1 = indices.getX(i * 3);
+                                idx2 = indices.getX(i * 3 + 1);
+                                idx3 = indices.getX(i * 3 + 2);
+                            } else {
+                                idx1 = i * 3;
+                                idx2 = i * 3 + 1;
+                                idx3 = i * 3 + 2;
+                            }
+
+                            // 평균 법선 계산 (월드 좌표로 변환)
+                            const normal1 = new THREE.Vector3().fromBufferAttribute(normals, idx1).applyQuaternion(worldQuat);
+                            const normal2 = new THREE.Vector3().fromBufferAttribute(normals, idx2).applyQuaternion(worldQuat);
+                            const normal3 = new THREE.Vector3().fromBufferAttribute(normals, idx3).applyQuaternion(worldQuat);
+                            const avgNormal = new THREE.Vector3().addVectors(normal1, normal2).add(normal3).normalize();
+
+                            // 카메라 방향과 내적하여 카메라를 향하는 면 판정
+                            const dotProduct = avgNormal.dot(cameraDirection);
+                            if (dotProduct < -0.3) { // 카메라를 향하는 면
+                                filteredIndices.push(idx1, idx2, idx3);
+                            }
+                        }
+                    }
+                });
+
+                // 필터링된 면이 있으면 StencilOutlineHighlight로 하이라이트
+                if (filteredIndices.length > 0) {
+                    // 순회 중 발견한 첫 번째 메쉬 사용
+                    let originalMesh: THREE.Mesh | null = null;
+                    targetNode.traverse((child) => {
+                        if (!originalMesh && child instanceof THREE.Mesh) {
+                            originalMesh = child;
+                        }
+                    });
+
+                    if (originalMesh) {
+                        stencilHighlight.createFilteredMeshHighlight(
+                            originalMesh,
+                            filteredIndices,
+                            0xff0000, // 빨강색
+                            15,       // thresholdAngle
+                            0.6       // opacity
+                        );
+                        console.log('[ManualAssemblyManager] StencilOutlineHighlight로 하이라이트 적용 완료');
+                    }
+                }
+            } else {
+                console.warn('[ManualAssemblyManager] 대상 노드를 찾을 수 없습니다:', targetNodeName);
+            }
         } else {
             console.warn('[ManualAssemblyManager] 하이라이트를 위한 카메라를 찾을 수 없습니다.');
         }
@@ -204,7 +287,7 @@ export class ManualAssemblyManager {
 
         const service = this.partAssemblyService;
         const root = this.sceneRoot;
-        if (!service || !root) return;
+        if (!service || !root || !options) return;
 
         // 1. [Lifting Step] ASSEMBLY 노드를 살짝 들어올려 공간 확보
         const LIFT_OFFSET = new THREE.Vector3(0, 0, -10);
