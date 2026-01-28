@@ -650,6 +650,37 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
     }
   };
 
+  // 테스트: 가상 피벗 기반 조립 테스트
+  const handleTestVirtualPivotAssembly = async () => {
+    if (!manualAssemblyManager) {
+      console.error('[ManualEditor] ManualAssemblyManager가 초기화되지 않음');
+      return;
+    }
+
+    if (manualAssemblyManager.isPlaying()) {
+      console.warn('[ManualEditor] 애니메이션이 이미 실행 중');
+      return;
+    }
+
+    console.log('[ManualEditor] 가상 피벗 기반 조립 테스트 시작');
+    setIsAssemblyPlaying(true);
+    setAssemblyProgress(0);
+
+    try {
+      await manualAssemblyManager.assembleDamperCover({
+        duration: 1500,
+        onComplete: () => {
+          console.log('[ManualEditor] 가상 피벗 기반 조립 테스트 완료');
+          setIsAssemblyPlaying(false);
+          setAssemblyProgress(1);
+        }
+      });
+    } catch (error) {
+      console.error('[ManualEditor] 가상 피벗 기반 조립 테스트 실패:', error);
+      setIsAssemblyPlaying(false);
+    }
+  };
+
   // 조립 준비 (prepareManualAssembly)
   const handlePrepareAssembly = async () => {
     if (!manualAssemblyManager) {
@@ -834,6 +865,18 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
                     style={{ marginLeft: '8px' }}
                   >
                     {isAssemblyPlaying ? '분해중...' : '분해'}
+                  </button>
+                  <button
+                    className="viewer-test-btn"
+                    type="button"
+                    onClick={handleTestVirtualPivotAssembly}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onTouchStart={(event) => event.stopPropagation()}
+                    disabled={isAssemblyPlaying}
+                    style={{ marginLeft: '8px' }}
+                  >
+                    {isAssemblyPlaying ? '테스트중...' : '가상 피벗 테스트'}
                   </button>
                 </>
               }

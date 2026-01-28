@@ -439,4 +439,204 @@ export class NormalBasedHighlight {
         this.clearHighlights();
         this.sceneRoot = null;
     }
+
+    /**
+     * 정점 법선 벡터 분석을 통한 가상 피벗(Virtual Pivot) 계산
+     * 홈의 방향성을 분석하여 가상 회전축을 생성합니다.
+     * @param targetNode 대상 노드 (홈이 있는 부품)
+     * @param normalFilter 필터링할 방향 법선 벡터 (기본: Z축 방향)
+     * @param normalTolerance 법선 허용 오차 (기본: 0.2)
+     * @returns 가상 피벗 정보 (위치, 회전축, 방향 벡터) 또는 null
+     */
+    public static calculateVirtualPivotByNormalAnalysis(
+        targetNode: THREE.Object3D,
+        normalFilter: THREE.Vector3 = new THREE.Vector3(0, 0, 1),
+        normalTolerance: number = 0.2
+    ): {
+        position: THREE.Vector3;      // 피벗 위치 (월드 좌표)
+        rotationAxis: THREE.Vector3;  // 회전축 방향
+        insertionDirection: THREE.Vector3; // 삽입 방향
+        filteredVerticesCount: number; // 필터링된 정점 수
+    } | null {
+        try {
+            // 1. 월드 매트릭스 업데이트
+            targetNode.updateMatrixWorld(true);
+
+            // 2. 필터링된 정점들과 법선들을 저장할 배열
+            const filteredVertices: THREE.Vector3[] = [];
+            const filteredNormals: THREE.Vector3[] = [];
+            let totalProcessedMeshes = 0;
+            let totalProcessedFaces = 0;
+
+            // 3. 노드의 모든 메쉬 순회
+            targetNode.traverse((child) => {
+                if (child instanceof THREE.Mesh && child.geometry) {
+                    const geometry = child.geometry;
+                    totalProcessedMeshes++;
+
+                    // 법선 벡터가 없으면 계산
+                    if (!geometry.attributes.normal) {
+                        geometry.computeVertexNormals();
+                    }
+
+                    const positions = geometry.attributes.position;
+                    const normals = geometry.attributes.normal;
+                    const indices = geometry.index;
+
+                    // 메쉬의 월드 쿼터니언 가져오기 (법선 변환용)
+                    const worldQuat = new THREE.Quaternion();
+                    child.getWorldQuaternion(worldQuat);
+
+                    // 4. 인덱스 여부에 따라 처리
+                    if (indices) {
+                        const faceCount = indices.count / 3;
+                        totalProcessedFaces += faceCount;
+
+                        for (let i = 0; i < indices.count; i += 3) {
+                            const idx1 = indices.getX(i);
+                            const idx2 = indices.getX(i + 1);
+                            const idx3 = indices.getX(i + 2);
+
+                            // 평균 법선 계산 (월드 좌표로 변환)
+                            const avgNormal = NormalBasedHighlight.calculateAverageNormal(
+                                normals, idx1, idx2, idx3, worldQuat
+                            );
+
+                            // 법선 필터링 (내적값으로 비교)
+                            const dotProduct = Math.abs(avgNormal.dot(normalFilter));
+                            if (dotProduct > (1 - normalTolerance)) {
+                                // 필터링된 면의 정점들을 월드 좌표로 변환하여 추가
+                                const v1 = new THREE.Vector3().fromBufferAttribute(positions, idx1);
+                                const v2 = new THREE.Vector3().fromBufferAttribute(positions, idx2);
+                                const v3 = new THREE.Vector3().fromBufferAttribute(positions, idx3);
+
+                                v1.applyMatrix4(child.matrixWorld);
+                                v2.applyMatrix4(child.matrixWorld);
+                                v3.applyMatrix4(child.matrixWorld);
+
+                                filteredVertices.push(v1, v2, v3);
+                                filteredNormals.push(avgNormal.clone());
+                            }
+                        }
+                    } else {
+                        const faceCount = positions.count / 3;
+                        totalProcessedFaces += faceCount;
+
+                        for (let i = 0; i < positions.count; i += 3) {
+                            const idx1 = i;
+                            const idx2 = i + 1;
+                            const idx3 = i + 2;
+
+                            const avgNormal = NormalBasedHighlight.calculateAverageNormal(
+                                normals, idx1, idx2, idx3, worldQuat
+                            );
+
+                            const dotProduct = Math.abs(avgNormal.dot(normalFilter));
+                            if (dotProduct > (1 - normalTolerance)) {
+                                const v1 = new THREE.Vector3().fromBufferAttribute(positions, idx1);
+                                const v2 = new THREE.Vector3().fromBufferAttribute(positions, idx2);
+                                const v3 = new THREE.Vector3().fromBufferAttribute(positions, idx3);
+
+                                v1.applyMatrix4(child.matrixWorld);
+                                v2.applyMatrix4(child.matrixWorld);
+                                v3.applyMatrix4(child.matrixWorld);
+
+                                filteredVertices.push(v1, v2, v3);
+                                filteredNormals.push(avgNormal.clone());
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 5. 필터링된 정점이 없으면 null 반환
+            if (filteredVertices.length === 0) {
+                console.warn('[NormalBasedHighlight] 필터링된 면이 없습니다. 가상 피벗을 계산할 수 없습니다.', {
+                    normalFilter: `(${normalFilter.x}, ${normalFilter.y}, ${normalFilter.z})`,
+                    normalTolerance,
+                    processedMeshes: totalProcessedMeshes,
+                    processedFaces: totalProcessedFaces
+                });
+                return null;
+            }
+
+            // 6. 피벗 위치 계산 (필터링된 정점들의 중심점)
+            const pivotPosition = new THREE.Vector3();
+            filteredVertices.forEach((v) => pivotPosition.add(v));
+            pivotPosition.divideScalar(filteredVertices.length);
+
+            // 7. 평균 법선 벡터 계산 (삽입 방향)
+            const avgNormal = new THREE.Vector3();
+            filteredNormals.forEach((n) => avgNormal.add(n));
+            avgNormal.divideScalar(filteredNormals.length).normalize();
+
+            // 8. 회전축 계산 (법선 벡터와 수직인 방향)
+            // 월드 Up 벡터(0, 1, 0)와 평균 법선의 외적으로 회전축 계산
+            const worldUp = new THREE.Vector3(0, 1, 0);
+            let rotationAxis = new THREE.Vector3().crossVectors(avgNormal, worldUp).normalize();
+
+            // 외적 결과가 너무 작으면 (평행한 경우) 다른 축 사용
+            if (rotationAxis.length() < 0.01) {
+                const worldRight = new THREE.Vector3(1, 0, 0);
+                rotationAxis = new THREE.Vector3().crossVectors(avgNormal, worldRight).normalize();
+            }
+
+            console.log('[NormalBasedHighlight] 가상 피벗 계산 완료:', {
+                pivotPosition: `(${pivotPosition.x.toFixed(4)}, ${pivotPosition.y.toFixed(4)}, ${pivotPosition.z.toFixed(4)})`,
+                rotationAxis: `(${rotationAxis.x.toFixed(4)}, ${rotationAxis.y.toFixed(4)}, ${rotationAxis.z.toFixed(4)})`,
+                insertionDirection: `(${avgNormal.x.toFixed(4)}, ${avgNormal.y.toFixed(4)}, ${avgNormal.z.toFixed(4)})`,
+                filteredVerticesCount: filteredVertices.length,
+                filteredFacesCount: filteredVertices.length / 3,
+                processedMeshes: totalProcessedMeshes,
+                processedFaces: totalProcessedFaces
+            });
+
+            return {
+                position: pivotPosition,
+                rotationAxis,
+                insertionDirection: avgNormal,
+                filteredVerticesCount: filteredVertices.length
+            };
+        } catch (error) {
+            console.error('[NormalBasedHighlight] 가상 피벗 계산 실패:', error);
+            return null;
+        }
+    }
+
+    /**
+     * [정적 메서드] 평균 법선 벡터 계산
+     * 외부에서도 사용할 수 있도록 정적 메서드로 제공
+     */
+    private static calculateAverageNormal(
+        normals: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+        idx1: number,
+        idx2: number,
+        idx3: number,
+        quaternion: THREE.Quaternion
+    ): THREE.Vector3 {
+        const normal1 = new THREE.Vector3(
+            normals.getX(idx1),
+            normals.getY(idx1),
+            normals.getZ(idx1)
+        );
+        const normal2 = new THREE.Vector3(
+            normals.getX(idx2),
+            normals.getY(idx2),
+            normals.getZ(idx2)
+        );
+        const normal3 = new THREE.Vector3(
+            normals.getX(idx3),
+            normals.getY(idx3),
+            normals.getZ(idx3)
+        );
+
+        normal1.applyQuaternion(quaternion);
+        normal2.applyQuaternion(quaternion);
+        normal3.applyQuaternion(quaternion);
+
+        return new THREE.Vector3()
+            .addVectors(normal1, normal2)
+            .add(normal3)
+            .normalize();
+    }
 }

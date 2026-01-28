@@ -115,11 +115,11 @@ export class PartAssemblyService {
 
         // ... existing calculation logic
 
-        // Z축 고정, X/Y 선형 이동 로직 유지
+        // Z축 포함하여 3D 공간에서 정확한 홈 위치로 이동
         this.timeline.to(sourceNode.position, {
             x: targetLocalPos.x,
             y: targetLocalPos.y,
-            // z: targetLocalPos.z, // Z축은 의도적으로 제외하여 고정
+            z: targetLocalPos.z, // Z축 포함하여 선형 이동
             duration: (options.duration || 1000) / 1000,
             ease: options.easing || "power2.inOut",
             onUpdate: () => {
@@ -173,7 +173,7 @@ export class PartAssemblyService {
         this.timeline.to(sourceNode.position, {
             x: targetLocalPos.x,
             y: targetLocalPos.y,
-            // z: targetLocalPos.z, // Z축 포함하여 3D 공간에서 정확한 홈 위치로 이동
+            z: targetLocalPos.z, // Z축 포함하여 3D 공간에서 정확한 홈 위치로 이동
             duration: 1, // progress(0~1) 계산을 쉽게 하기 위해 1초로 설정
             ease: 'none', // 수동 제어 시에는 linear가 가장 직관적임
             onUpdate: () => {
@@ -278,11 +278,11 @@ export class PartAssemblyService {
         // const mainDuration = config.duration / 1000;
 
         console.log('x>> ', targetLocalPos.x, 'y>> ', targetLocalPos.y, 'z>> ', targetLocalPos.z);
-        // [수정] 들어올림(Lift) 단계 없이 타겟 위치로 즉시 선형 이동
+        // Z축 포함하여 3D 공간에서 정확한 홈 위치로 선형 이동
         this.timeline.to(sourceNode.position, {
             x: targetLocalPos.x,
             y: targetLocalPos.y,
-            // z: targetLocalPos.z, // Z축 포함하여 3D 공간에서 정확한 홈 위치로 이동
+            z: targetLocalPos.z, // Z축 포함하여 선형 이동
             duration: config.duration / 1000,
             ease: config.easing, // 'linear' 또는 'power3.inOut' 등 옵션에 따름
             onUpdate: () => {

@@ -9,7 +9,7 @@ import {
 import { getDamperAssemblyService } from '../fridge/DamperAssemblyService';
 import { StencilOutlineHighlight } from '../../shared/utils/StencilOutlineHighlight';
 import { getMetadataLoader } from '../../shared/utils/MetadataLoader';
-import { GrooveDetectionUtils } from '../../shared/utils/GrooveDetectionUtils';
+import { NormalBasedHighlight } from '../../shared/utils/NormalBasedHighlight';
 
 /**
  * 수동 조립 관리자
@@ -159,8 +159,8 @@ export class ManualAssemblyManager {
     }
 
     /**
-     * 댐퍼 커버 조립 (Bounding Box & Offset + Metadata Mapping 방식)
-     * 더미 노드가 없는 경우, Bounding Box 기반으로 홈을 식별하고 Metadata의 오프셋을 적용합니다.
+     * 댐퍼 커버 조립 (정점 법선 벡터 분석을 통한 가상 피벗 방식)
+     * 메쉬의 정점과 법선 벡터를 분석하여 가상 회전축을 생성하고 조립합니다.
      * @param options 조립 옵션
      * @param _camera 카메라 객체 (선택사항, 제공되지 않으면 자동 탐색) - 현재 미사용
      */
@@ -173,7 +173,7 @@ export class ManualAssemblyManager {
     ): Promise<void> {
         if (!this.sceneRoot) return;
 
-        console.log('[ManualAssemblyManager] 댐퍼 커버 조립 시작');
+        console.log('[ManualAssemblyManager] 댐퍼 커버 조립 시작 (선형 이동 방식)');
 
         try {
             // 1. 노드 확보
@@ -189,76 +189,103 @@ export class ManualAssemblyManager {
             const metadataLoader = getMetadataLoader();
             const config = await metadataLoader.loadAssemblyConfig('damper_cover_assembly');
 
-            // [중요] 초기 오프셋을 0으로 설정하여 정확한 위치로 가는지 먼저 확인 권장
-            // Z값이 크면 부품이 타겟의 로컬 축 방향(아래일 수 있음)으로 날아갑니다.
-            const insertionOffset = config?.insertion.offset || new THREE.Vector3(0, 0, 0);
-            console.log('[ManualAssemblyManager] 적용된 오프셋:', insertionOffset);
-
-            // 3. 바운딩 박스의 중심점을 기준으로 계산(세부 위치는 오프셋으로 조정)
-            const grooveCenter = GrooveDetectionUtils.calculateGrooveCenterByBoundingBox(
+            // 3. 정점 법선 벡터 분석을 통한 가상 피벗 계산
+            // Z축 방향(0, 0, 1)을 기준으로 법선 필터링
+            const virtualPivot = NormalBasedHighlight.calculateVirtualPivotByNormalAnalysis(
                 damperAssembly,
-                config?.grooveDetection.innerBoundRatio || 0.3
+                new THREE.Vector3(0, 0, 1), // Z축 방향 필터
+                config?.grooveDetection.normalTolerance || 0.2
             );
-            console.log('grooveCenter>> ', grooveCenter);
-            if (!grooveCenter) {
-                console.error('홈 중심점을 계산할 수 없습니다.');
+
+            if (!virtualPivot) {
+                console.error('[Error] 가상 피벗을 계산할 수 없습니다.');
                 return;
             }
 
-            // --- [시각적 디버깅용 붉은 구체 생성] ---
-            // 이 구체가 분홍색 노드 중앙에 생기는지 확인하세요. 엉뚱한 곳에 있다면 GrooveUtils 문제.
+            // [추가] 커버의 대응되는 피벗(Plug) 계산
+            // 어셈블리의 법선과 반대 방향(-Z)을 가진 면을 찾음
+            const coverPivot = NormalBasedHighlight.calculateVirtualPivotByNormalAnalysis(
+                damperCover,
+                new THREE.Vector3(0, 0, -1), // 반대 방향 필터
+                config?.grooveDetection.normalTolerance || 0.2
+            );
 
-            const debugRadius = 0.0005; // 모델 크기에 맞춰 0.01 ~ 0.05 사이로 조정해 보세요.
-            const debugGeom = new THREE.SphereGeometry(debugRadius, 16, 16);
-
-            const debugMat = new THREE.MeshBasicMaterial({
-                color: 0x800080,
-                depthTest: false,
-                transparent: true,
-                opacity: 0.8
+            console.log('[ManualAssemblyManager] 가상 피벗 정보:', {
+                assemblyPivot: virtualPivot.position,
+                coverPivot: coverPivot?.position,
+                rotationAxis: virtualPivot.rotationAxis,
+                insertionDirection: virtualPivot.insertionDirection
             });
 
-            const debugSphere = new THREE.Mesh(debugGeom, debugMat);
-            debugSphere.position.copy(grooveCenter);
-            debugSphere.renderOrder = 999;
+            // 디버그용 시각화: 가상 피벗 위치에 구체 생성
+            const pivotSphereGeometry = new THREE.SphereGeometry(0.0005, 16, 16);
+            const pivotSphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const pivotSphere = new THREE.Mesh(pivotSphereGeometry, pivotSphereMaterial);
+            pivotSphere.position.copy(virtualPivot.position);
+            this.sceneRoot.add(pivotSphere);
 
-            this.sceneRoot.add(debugSphere);
-            console.log('디버깅용 붉은 구체 생성됨:', grooveCenter);
+            // 커버 피벗 위치도 시각화
+            if (coverPivot) {
+                const coverPivotSphere = new THREE.Mesh(pivotSphereGeometry, pivotSphereMaterial);
+                coverPivotSphere.position.copy(coverPivot.position);
+                this.sceneRoot.add(coverPivotSphere);
+            }
 
-            // ------------------------------------
-
-            // 4. 타겟 위치 계산 (World Space)
-            // 타겟(분홍색)의 회전값을 가져와 오프셋에 적용
+            // 4. 타겟 상태 계산
+            // 최종 조립 상태의 쿼터니언 (어셈블리와 동일하게 정렬)
             const targetWorldQuat = new THREE.Quaternion();
             damperAssembly.getWorldQuaternion(targetWorldQuat);
 
-            const rotatedOffset = insertionOffset.clone().applyQuaternion(targetWorldQuat);
-            const targetWorldPos = grooveCenter.clone().add(rotatedOffset);
-
-            // 5. 로컬 좌표 변환 (World -> Local)
-            const targetLocalPos = targetWorldPos.clone();
-
-            if (damperCover.parent) {
-                // [보정] 부모의 월드 행렬을 최신화한 후 좌표 변환 수행
-                damperCover.parent.updateMatrixWorld(true);
-
-                // 위치 변환: Three.js 내장 메서드 사용 (가장 안전)
-                damperCover.parent.worldToLocal(targetLocalPos);
+            // 커버의 로컬 피벗 위치 계산 (커버의 원점 기준)
+            const coverLocalPivot = new THREE.Vector3();
+            if (coverPivot) {
+                coverLocalPivot.copy(coverPivot.position);
+                damperCover.worldToLocal(coverLocalPivot);
+            } else {
+                // 커버 피벗을 못 찾으면 메타데이터 오프셋 활용
+                const insertionOffset = config?.insertion.offset || new THREE.Vector3(0, 0, 0);
+                coverLocalPivot.copy(insertionOffset).negate();
             }
 
-            // 6. 애니메이션 실행 (GSAP)
+            // 최종 조립 위치: 어셈블리 피벗 위치 - (회전된 커버 로컬 피벗)
+            const finalWorldPos = virtualPivot.position.clone().sub(
+                coverLocalPivot.clone().applyQuaternion(targetWorldQuat)
+            );
+
+            const finalLocalPos = finalWorldPos.clone();
+            if (damperCover.parent) {
+                damperCover.parent.updateMatrixWorld(true);
+                damperCover.parent.worldToLocal(finalLocalPos);
+            }
+
+            const finalLocalQuat = targetWorldQuat.clone();
+            if (damperCover.parent) {
+                const parentWorldQuat = new THREE.Quaternion();
+                damperCover.parent.getWorldQuaternion(parentWorldQuat);
+                finalLocalQuat.premultiply(parentWorldQuat.invert());
+            }
+
+            // 5. 애니메이션 설정 (선형 이동)
             const duration = options?.duration || 1500;
+            const startPos = damperCover.position.clone();
+            const startQuat = damperCover.quaternion.clone();
 
             await new Promise<void>((resolve) => {
-                // 위치 이동만 수행 (회전 애니메이션 제거)
-                gsap.to(damperCover.position, {
-                    x: targetLocalPos.x,
-                    y: targetLocalPos.y,
-                    // z: targetLocalPos.z,
+                const animObj = { progress: 0 };
+
+                gsap.to(animObj, {
+                    progress: 1,
                     duration: duration / 1000,
                     ease: "power2.inOut",
+                    onUpdate: () => {
+                        const p = animObj.progress;
+
+                        // 선형 보간을 사용하여 위치와 회전을 동시에 보간
+                        damperCover.position.lerpVectors(startPos, finalLocalPos, p);
+                        damperCover.quaternion.slerpQuaternions(startQuat, finalLocalQuat, p);
+                    },
                     onComplete: () => {
-                        console.log('[ManualAssemblyManager] 조립 완료');
+                        console.log('[ManualAssemblyManager] 조립 완료 (선형 이동 방식)');
                         options?.onComplete?.();
                         resolve();
                     }

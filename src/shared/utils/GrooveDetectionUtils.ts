@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getPreciseBoundingBox } from './commonUtils';
+import { NormalBasedHighlight } from './NormalBasedHighlight';
 
 /**
  * 홈(Groove) 영역 식별 유틸리티
@@ -326,5 +327,31 @@ export class GrooveDetectionUtils {
             console.error('[GrooveDetectionUtils] 바운딩 박스 정보 조회 실패:', error);
             return null;
         }
+    }
+
+    /**
+     * 정점 법선 벡터 분석을 통한 가상 피벗(Virtual Pivot) 계산
+     * NormalBasedHighlight의 정적 메서드를 활용하여 가상 회전축을 생성합니다.
+     * @param targetNode 대상 노드 (홈이 있는 부품)
+     * @param normalFilter 필터링할 방향 법선 벡터 (기본: Z축 방향)
+     * @param normalTolerance 법선 허용 오차 (기본: 0.2)
+     * @returns 가상 피벗 정보 (위치, 회전축, 방향 벡터) 또는 null
+     */
+    public static calculateVirtualPivotByNormalAnalysis(
+        targetNode: THREE.Object3D,
+        normalFilter: THREE.Vector3 = new THREE.Vector3(0, 0, 1),
+        normalTolerance: number = 0.2
+    ): {
+        position: THREE.Vector3;      // 피벗 위치 (월드 좌표)
+        rotationAxis: THREE.Vector3;  // 회전축 방향
+        insertionDirection: THREE.Vector3; // 삽입 방향
+        filteredVerticesCount: number; // 필터링된 정점 수
+    } | null {
+        // NormalBasedHighlight의 정적 메서드 활용
+        return NormalBasedHighlight.calculateVirtualPivotByNormalAnalysis(
+            targetNode,
+            normalFilter,
+            normalTolerance
+        );
     }
 }
