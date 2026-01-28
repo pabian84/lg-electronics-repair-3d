@@ -171,117 +171,104 @@ export class ManualAssemblyManager {
         },
         _camera?: THREE.Camera
     ): Promise<void> {
-        if (!this.sceneRoot) {
-            console.warn('[ManualAssemblyManager] sceneRoot가 초기화되지 않았습니다.');
-            return;
-        }
+        if (!this.sceneRoot) return;
 
-        console.log('[ManualAssemblyManager] 댐퍼 커버 조립 시작 (Bounding Box & Offset + Metadata Mapping 방식)');
+        console.log('[ManualAssemblyManager] 댐퍼 커버 조립 시작');
 
         try {
-            // 1. 타겟 노드 찾기
-            const damperAssembly = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE);
-            const damperCover = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_COVER_BODY_NODE);
+            // 1. 노드 확보
+            const damperAssembly = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE); // 분홍색 (Target)
+            const damperCover = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_COVER_BODY_NODE);   // 녹색 (Moving Part)
 
             if (!damperAssembly || !damperCover) {
-                console.error('[ManualAssemblyManager] 노드를 찾을 수 없습니다.');
-                console.error('  - Damper Assembly:', damperAssembly ? 'found' : 'not found');
-                console.error('  - Damper Cover:', damperCover ? 'found' : 'not found');
+                console.error('[Error] 필수 노드를 찾을 수 없습니다.');
                 return;
             }
 
-            // 2. 메타데이터 로딩
+            // 2. 메타데이터 및 설정 로드
             const metadataLoader = getMetadataLoader();
             const config = await metadataLoader.loadAssemblyConfig('damper_cover_assembly');
 
-            if (!config) {
-                console.warn('[ManualAssemblyManager] 메타데이터를 찾을 수 없습니다. 기본값을 사용합니다.');
-            }
+            // [중요] 초기 오프셋을 0으로 설정하여 정확한 위치로 가는지 먼저 확인 권장
+            // Z값이 크면 부품이 타겟의 로컬 축 방향(아래일 수 있음)으로 날아갑니다.
+            const insertionOffset = config?.insertion.offset || new THREE.Vector3(0, 0, 0);
 
-            // 3. 홈 영역 식별 (Bounding Box 기반)
-            const innerBoundRatio = config?.grooveDetection.innerBoundRatio || 0.3;
+            // 3. 홈 중심점 계산 (World 좌표)
+            // GrooveDetectionUtils가 World 좌표를 반환한다고 가정 (이전 답변 수정사항 적용 필)
             const grooveCenter = GrooveDetectionUtils.calculateGrooveCenterByBoundingBox(
                 damperAssembly,
-                innerBoundRatio
+                0.3
             );
 
             if (!grooveCenter) {
-                console.error('[ManualAssemblyManager] 홈 중심점을 계산할 수 없습니다.');
+                console.error('홈 중심점을 계산할 수 없습니다.');
                 return;
             }
 
-            console.log('[ManualAssemblyManager] 홈 중심점:', {
-                x: grooveCenter.x.toFixed(2),
-                y: grooveCenter.y.toFixed(2),
-                z: grooveCenter.z.toFixed(2)
-            });
+            // --- [시각적 디버깅용 붉은 구체 생성] ---
+            // 이 구체가 분홍색 노드 중앙에 생기는지 확인하세요. 엉뚱한 곳에 있다면 GrooveUtils 문제.
 
-            // 4. 오프셋 적용 (Metadata Mapping) & [수정 2] 회전 반영
-            const insertionOffset = config?.insertion.offset || new THREE.Vector3(0, 0, 0.5);
+            const debugGeom = new THREE.SphereGeometry(0.5, 16, 16);
+            const debugMat = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: false, transparent: true, opacity: 0.8 });
+            const debugSphere = new THREE.Mesh(debugGeom, debugMat);
+            debugSphere.position.copy(grooveCenter);
+            debugSphere.renderOrder = 999; // 다른 물체보다 위에 그림
+            this.sceneRoot.add(debugSphere);
+            console.log('디버깅용 붉은 구체 생성됨:', grooveCenter);
 
-            // 오프셋 벡터 복사
-            const offsetVector = insertionOffset.clone();
+            // ------------------------------------
 
-            // [중요] 타겟(Damper Assembly)의 월드 회전값을 가져와 오프셋에 적용
-            const targetQuaternion = new THREE.Quaternion();
-            damperAssembly.getWorldQuaternion(targetQuaternion);
-            offsetVector.applyQuaternion(targetQuaternion);
+            // 4. 타겟 위치 계산 (World Space)
+            // 타겟(분홍색)의 회전값을 가져와 오프셋에 적용
+            const targetWorldQuat = new THREE.Quaternion();
+            damperAssembly.getWorldQuaternion(targetWorldQuat);
 
-            // 회전이 적용된 오프셋을 중심점에 더함
-            const targetPosition = grooveCenter.clone().add(offsetVector);
+            const rotatedOffset = insertionOffset.clone().applyQuaternion(targetWorldQuat);
+            const targetWorldPos = grooveCenter.clone().add(rotatedOffset);
 
-            console.log('[ManualAssemblyManager] 타겟 위치 (오프셋 및 회전 적용):', {
-                x: targetPosition.x.toFixed(2),
-                y: targetPosition.y.toFixed(2),
-                z: targetPosition.z.toFixed(2)
-            });
+            // 5. 로컬 좌표 및 회전값 변환 (World -> Local)
+            const targetLocalPos = targetWorldPos.clone();
+            const targetLocalQuat = targetWorldQuat.clone();
 
-            // 5. 월드 좌표를 로컬 좌표로 변환
-            const parent = damperCover.parent;
-            let targetLocalPos: THREE.Vector3;
-            if (parent) {
-                const worldToLocalMatrix = parent.matrixWorld.clone().invert();
-                targetLocalPos = targetPosition.clone().applyMatrix4(worldToLocalMatrix);
-            } else {
-                targetLocalPos = targetPosition;
+            if (damperCover.parent) {
+                // [보정] 부모의 월드 행렬을 최신화한 후 좌표 변환 수행
+                damperCover.parent.updateMatrixWorld(true);
+
+                // 위치 변환: Three.js 내장 메서드 사용 (가장 안전)
+                damperCover.parent.worldToLocal(targetLocalPos);
+
+                // 회전 변환: 부모의 월드 회전을 역산하여 적용
+                const parentWorldQuat = new THREE.Quaternion();
+                damperCover.parent.getWorldQuaternion(parentWorldQuat);
+                targetLocalQuat.premultiply(parentWorldQuat.invert());
             }
 
-            console.log('[ManualAssemblyManager] 타겟 로컬 위치:', {
-                x: targetLocalPos.x.toFixed(2),
-                y: targetLocalPos.y.toFixed(2),
-                z: targetLocalPos.z.toFixed(2)
-            });
-
-            // 6. 현재 위치 저장 (디버깅용)
-            const startPos = damperCover.position.clone();
-            console.log('[ManualAssemblyManager] 시작 위치:', {
-                x: startPos.x.toFixed(2),
-                y: startPos.y.toFixed(2),
-                z: startPos.z.toFixed(2)
-            });
-
-            // 7. GSAP 애니메이션으로 삽입
-            const duration = options?.duration || config?.animation.duration || 1500;
-            const easing = config?.animation.easing || 'power2.inOut';
+            // 6. 애니메이션 실행 (GSAP)
+            const duration = options?.duration || 1500;
+            const startQuat = damperCover.quaternion.clone();
+            const tempObj = { t: 0 };
 
             await new Promise<void>((resolve) => {
+                // 위치 이동
                 gsap.to(damperCover.position, {
                     x: targetLocalPos.x,
                     y: targetLocalPos.y,
                     z: targetLocalPos.z,
                     duration: duration / 1000,
-                    ease: easing,
+                    ease: "power2.inOut"
+                });
+
+                // [수정] 회전 보간 (TypeScript 에러 해결)
+                gsap.to(tempObj, {
+                    t: 1,
+                    duration: duration / 1000,
+                    ease: "power2.inOut",
                     onUpdate: () => {
-                        // 애니메이션 진행状況 출력 (선택적)
-                        // const progress = damperCover.position.distanceTo(startPos) / targetLocalPos.distanceTo(startPos);
+                        // THREE.Quaternion.slerp 대신 slerpQuaternions 사용
+                        damperCover.quaternion.slerpQuaternions(startQuat, targetLocalQuat, tempObj.t);
                     },
                     onComplete: () => {
-                        console.log('[ManualAssemblyManager] 댐퍼 커버 조립 완료!');
-                        console.log('  - 최종 위치:', {
-                            x: damperCover.position.x.toFixed(2),
-                            y: damperCover.position.y.toFixed(2),
-                            z: damperCover.position.z.toFixed(2)
-                        });
+                        console.log('[ManualAssemblyManager] 조립 완료');
                         options?.onComplete?.();
                         resolve();
                     }
@@ -289,8 +276,7 @@ export class ManualAssemblyManager {
             });
 
         } catch (error) {
-            console.error('[ManualAssemblyManager] 댐퍼 커버 조립 중 오류 발생:', error);
-            throw error;
+            console.error('[Error] 조립 로직 실패:', error);
         }
     }
 }
