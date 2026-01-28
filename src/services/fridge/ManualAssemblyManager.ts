@@ -10,6 +10,7 @@ import { getDamperAssemblyService } from '../fridge/DamperAssemblyService';
 import { StencilOutlineHighlight } from '../../shared/utils/StencilOutlineHighlight';
 import { getMetadataLoader } from '../../shared/utils/MetadataLoader';
 import { NormalBasedHighlight } from '../../shared/utils/NormalBasedHighlight';
+import { GrooveDetectionUtils } from '../../shared/utils/GrooveDetectionUtils';
 
 /**
  * 수동 조립 관리자
@@ -159,127 +160,106 @@ export class ManualAssemblyManager {
     }
 
     /**
-     * 댐퍼 커버 조립 (정점 법선 벡터 분석을 통한 가상 피벗 방식)
-     * 메쉬의 정점과 법선 벡터를 분석하여 가상 회전축을 생성하고 조립합니다.
-     * @param options 조립 옵션
-     * @param _camera 카메라 객체 (선택사항, 제공되지 않으면 자동 탐색) - 현재 미사용
+     * [Modified] 댐퍼 커버 조립 (정점 법선 분석 기반 Auto-Snap 적용)
+     * 돌출부와 홈의 정점 데이터를 분석하여 자동으로 정확한 위치로 결합합니다.
      */
     public async assembleDamperCover(
         options?: {
             duration?: number;
             onComplete?: () => void;
-        },
-        _camera?: THREE.Camera
-    ): Promise<void> {
-        if (!this.sceneRoot) return;
-
-        console.log('[ManualAssemblyManager] 댐퍼 커버 조립 시작 (선형 이동 방식)');
-
-        try {
-            // 1. 노드 확보
-            const damperAssembly = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE); // 분홍색 (Target)
-            const damperCover = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_COVER_BODY_NODE);   // 녹색 (Moving Part)
-
-            if (!damperAssembly || !damperCover) {
-                console.error('[Error] 필수 노드를 찾을 수 없습니다.');
-                return;
-            }
-
-            // 2. 메타데이터 및 설정 로드
-            const metadataLoader = getMetadataLoader();
-            const config = await metadataLoader.loadAssemblyConfig('damper_cover_assembly');
-
-            // 3. 정점 법선 벡터 분석을 통한 가상 피벗 계산
-            // Z축 방향(0, 0, 1)을 기준으로 법선 필터링
-            const virtualPivot = NormalBasedHighlight.calculateVirtualPivotByNormalAnalysis(
-                damperAssembly,
-                new THREE.Vector3(0, 0, 1), // Z축 방향 필터
-                config?.grooveDetection.normalTolerance || 0.2
-            );
-
-            if (!virtualPivot) {
-                console.error('[Error] 가상 피벗을 계산할 수 없습니다.');
-                return;
-            }
-
-            // [추가] 커버의 대응되는 피벗(Plug) 계산
-            // 어셈블리의 법선과 반대 방향(-Z)을 가진 면을 찾음
-            const coverPivot = NormalBasedHighlight.calculateVirtualPivotByNormalAnalysis(
-                damperCover,
-                new THREE.Vector3(0, 0, -1), // 반대 방향 필터
-                config?.grooveDetection.normalTolerance || 0.2
-            );
-
-            console.log('[ManualAssemblyManager] 가상 피벗 정보:', {
-                assemblyPivot: virtualPivot.position,
-                coverPivot: coverPivot?.position,
-                rotationAxis: virtualPivot.rotationAxis,
-                insertionDirection: virtualPivot.insertionDirection
-            });
-
-            // 디버그용 시각화: 가상 피벗 위치에 구체 생성
-            const pivotSphereGeometry = new THREE.SphereGeometry(0.0005, 16, 16);
-            const pivotSphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-            const pivotSphere = new THREE.Mesh(pivotSphereGeometry, pivotSphereMaterial);
-            pivotSphere.position.copy(virtualPivot.position);
-            this.sceneRoot.add(pivotSphere);
-
-            // 4. 타겟 상태 계산 (가상 피벗 간의 차이를 이용한 선형 이동)
-            if (!coverPivot) {
-                console.error('[Error] 커버의 피벗을 찾을 수 없어 이동 경로를 계산할 수 없습니다.');
-                return;
-            }
-
-            // [수정] 분홍색 홈 피벗(virtualPivot)과 녹색 돌기 피벗(coverPivot) 사이의 월드 좌표 차이 계산
-            const worldOffset = new THREE.Vector3().subVectors(
-                virtualPivot.position,
-                coverPivot.position
-            );
-            worldOffset.y = 0;
-            console.log('[ManualAssemblyManager] 월드 오프셋:', worldOffset);
-
-            // 현재 커버의 월드 위치에 해당 오프셋을 더해 최종 월드 위치 계산
-            const currentWorldPos = new THREE.Vector3();
-            damperCover.getWorldPosition(currentWorldPos);
-            const finalWorldPos = currentWorldPos.clone().add(worldOffset);
-
-            const finalLocalPos = finalWorldPos.clone();
-            if (damperCover.parent) {
-                damperCover.parent.updateMatrixWorld(true);
-                damperCover.parent.worldToLocal(finalLocalPos);
-            }
-
-            // 회전은 현재 상태 유지 (사용하지 않음)
-
-            // 5. 애니메이션 설정 (선형 이동)
-            const duration = options?.duration || 1500;
-            const startPos = damperCover.position.clone();
-
-            await new Promise<void>((resolve) => {
-                const animObj = { progress: 0 };
-
-                gsap.to(animObj, {
-                    progress: 1,
-                    duration: duration / 1000,
-                    ease: "power2.inOut",
-                    onUpdate: () => {
-                        const p = animObj.progress;
-
-                        // 위치만 선형 보간 (회전 없음)
-                        damperCover.position.lerpVectors(startPos, finalLocalPos, p);
-                        // 회전은 시작 상태 유지
-                    },
-                    onComplete: () => {
-                        console.log('[ManualAssemblyManager] 조립 완료 (선형 이동 방식)');
-                        options?.onComplete?.();
-                        resolve();
-                    }
-                });
-            });
-
-        } catch (error) {
-            console.error('[Error] 조립 로직 실패:', error);
         }
+    ): Promise<void> {
+        // 1. Scene Root 확인
+        if (!this.sceneRoot) {
+            console.error('[ManualAssemblyManager] Scene root not initialized.');
+            return;
+        }
+
+        // 2. [Correction] 노드 직접 조회 (Service 의존성 제거)
+        const coverNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_COVER_BODY_NODE) as THREE.Mesh;
+        const assemblyNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE) as THREE.Mesh;
+
+        // 3. 노드 존재 여부 검증
+        if (!coverNode || !assemblyNode) {
+            console.error('[ManualAssemblyManager] Target nodes not found for assembly:', {
+                coverName: LEFT_DOOR_DAMPER_COVER_BODY_NODE,
+                assemblyName: LEFT_DOOR_DAMPER_ASSEMBLY_NODE
+            });
+            return;
+        }
+
+        console.log('[Assembly] Starting Vertex Normal Analysis for Auto-Snap...');
+
+        // 4. [Cover 분석] 결합 돌출부(Plug) 탐지
+        // 댐퍼 커버의 핀이 향하는 방향(예: 로컬 Z 또는 Y)에 맞춰 벡터를 조정하세요.
+        const plugAnalysis = GrooveDetectionUtils.calculateVirtualPivotByNormalAnalysis(
+            coverNode,
+            new THREE.Vector3(0, 0, 1),
+            0.5
+        );
+
+        // 5. [Assembly 분석] 결합 홈(Hole) 탐지
+        const holeAnalysis = GrooveDetectionUtils.calculateVirtualPivotByNormalAnalysis(
+            assemblyNode,
+            new THREE.Vector3(0, 0, 1),
+            0.5
+        );
+
+        let targetPosition = new THREE.Vector3();
+
+        // 6. 결합 위치 계산
+        if (plugAnalysis && holeAnalysis) {
+            console.log('[Assembly] Auto-Snap: 정점 분석 성공. 정밀 좌표 계산 중...');
+
+            const currentCoverPos = coverNode.position.clone();
+            const plugWorldPos = plugAnalysis.position;
+            const holeWorldPos = holeAnalysis.position;
+
+            // 이동 벡터(Delta) 계산: 홈 위치 - 돌출부 위치
+            const moveDelta = new THREE.Vector3().subVectors(holeWorldPos, plugWorldPos);
+
+            // 목표 위치 설정
+            targetPosition.addVectors(currentCoverPos, moveDelta);
+
+        } else {
+            console.warn('[Assembly] Auto-Snap: 정점 분석 실패. Fallback(BoundingBox) 실행.');
+
+            // Fallback: 기존 Bounding Box 방식
+            const holeCenter = GrooveDetectionUtils.calculateGrooveCenterByBoundingBox(assemblyNode);
+
+            if (holeCenter) {
+                targetPosition.copy(holeCenter);
+                // 부모가 있다면 로컬 좌표로 변환
+                if (coverNode.parent) {
+                    coverNode.parent.worldToLocal(targetPosition);
+                }
+            } else {
+                targetPosition.set(0, 0, 0); // 최후의 안전장치
+            }
+        }
+
+        // 7. 애니메이션 실행
+        return new Promise((resolve) => {
+            this.isAssemblyPlaying = true;
+
+            gsap.to(coverNode.position, {
+                x: targetPosition.x,
+                y: targetPosition.y,
+                z: targetPosition.z,
+                duration: options?.duration || 1.5,
+                ease: 'power2.inOut',
+                onUpdate: () => {
+                    // 필요 시 진행률 업데이트
+                    // this.updateManualProgress(...);
+                },
+                onComplete: () => {
+                    this.isAssemblyPlaying = false;
+                    console.log('[Assembly] 결합 완료');
+                    if (options?.onComplete) options.onComplete();
+                    resolve();
+                }
+            });
+        });
     }
 }
 
