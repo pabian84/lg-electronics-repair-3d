@@ -177,7 +177,7 @@ export class StencilOutlineHighlight {
     /**
      * [내부 메서드] 단일 면만 하이라이트 생성
      */
-    private createSingleFaceHighlight(
+    public createSingleFaceHighlight(
         originalMesh: THREE.Mesh,
         faceIndices: number[],
         color: number,

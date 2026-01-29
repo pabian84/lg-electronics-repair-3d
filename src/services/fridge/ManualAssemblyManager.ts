@@ -11,6 +11,8 @@ import { getMetadataLoader } from '../../shared/utils/MetadataLoader';
 import { GrooveDetectionUtils } from '../../shared/utils/GrooveDetectionUtils';
 import { NormalBasedHighlight } from '../../shared/utils/NormalBasedHighlight';
 import { NormalBasedHoleVisualizer } from '../../components/highlight';
+import { StencilOutlineHighlight } from '../../shared/utils/StencilOutlineHighlight';
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/Addons.js';
 
 /**
  * 수동 조립 관리자
@@ -25,6 +27,7 @@ export class ManualAssemblyManager {
 
     private debugObjects: THREE.Object3D[] = [];
     private holeVisualizer: NormalBasedHoleVisualizer = new NormalBasedHoleVisualizer();
+    private normalBasedHighlight: NormalBasedHighlight = new NormalBasedHighlight();
 
     public setCameraControls(cameraControls: any): void {
         this.cameraControls = cameraControls;
@@ -39,6 +42,7 @@ export class ManualAssemblyManager {
         damperService.initialize(sceneRoot);
 
         this.holeVisualizer.initialize(sceneRoot);
+        this.normalBasedHighlight.initialize(sceneRoot);
 
         console.log('[ManualAssemblyManager] 초기화 완료');
     }
@@ -128,12 +132,97 @@ export class ManualAssemblyManager {
 
     public dispose(): void {
         this.holeVisualizer.dispose();
+        this.normalBasedHighlight.dispose();
         this.partAssemblyService?.dispose();
         this.partAssemblyService = null;
         this.sceneRoot = null;
         this.assemblyProgress = 0;
         this.isAssemblyPlaying = false;
         console.log('[ManualAssemblyManager] 서비스 정리 완료');
+    }
+
+    /**
+     * 노드의 면을 하이라이트하고 홈을 찾아 중심점을 체크합니다.
+     * @param nodeName 대상 노드 이름
+     */
+    public async detectAndHighlightGrooves(nodeName: string): Promise<void> {
+        if (!this.sceneRoot || !this.cameraControls) {
+            console.warn('[ManualAssemblyManager] sceneRoot 또는 cameraControls가 초기화되지 않았습니다.');
+            return;
+        }
+
+        const targetNode = this.sceneRoot.getObjectByName(nodeName);
+        if (!targetNode) {
+            console.warn(`[ManualAssemblyManager] 노드를 찾을 수 없습니다: ${nodeName}`);
+            return;
+        }
+
+        // 1. 기존 하이라이트 및 디버그 객체 제거
+        this.clearDebugObjects();
+
+        // 2. 카메라 방향 가져오기
+        const camera = this.cameraControls.camera || this.cameraControls.object;
+        const cameraDirection = new THREE.Vector3();
+        camera.getWorldDirection(cameraDirection);
+
+        // 3. 시각적 하이라이트 적용 (카메라 필터 기반)
+        // 카메라가 바라보는 방향의 면들을 하이라이트
+        this.normalBasedHighlight.highlightFacesByCameraFilter(
+            targetNode,
+            camera,
+            0xff0000, // 정면: 빨강
+            15        // 임계 각도
+        );
+
+        // 4. 홈 탐지 및 중심점 계산 (법선 분석 기반)
+        // 카메라 방향의 반대 방향(홈 안쪽으로 들어가는 방향)을 필터로 사용
+        const normalFilter = cameraDirection.clone().negate();
+        console.log('normalFilter>>> ', normalFilter);
+
+        const holeAnalyses = GrooveDetectionUtils.calculateMultipleVirtualPivotsByNormalAnalysis(
+            targetNode,
+            normalFilter,
+            0.3,  // 허용 오차 (약간 넉넉하게)
+            0.02  // 클러스터링 거리 (2cm)
+        );
+
+        console.log(`[ManualAssemblyManager] ${holeAnalyses.length}개의 홈이 탐지되었습니다.`);
+
+        // 5. 탐지된 중심점에 마커 표시
+        if (holeAnalyses.length > 0) {
+            const holePositions = holeAnalyses.map(a => a.position);
+            this.visualizeHoleCenters(holePositions);
+        }
+    }
+
+    /**
+     * 탐지된 홈 중심점들에 시각적 마커를 표시합니다.
+     */
+    private visualizeHoleCenters(positions: THREE.Vector3[]): void {
+        if (!this.sceneRoot) return;
+
+        const markerSize = 0.002; // 마커 크기 (2mm)
+        const debugRenderOrder = 1000;
+
+        positions.forEach((pos, index) => {
+            const geometry = new THREE.SphereGeometry(markerSize, 16, 16);
+            const material = new THREE.MeshBasicMaterial({
+                color: 0x00ff00, // 탐지된 홈은 초록색으로 표시
+                depthTest: false,
+                depthWrite: false,
+                transparent: true,
+                opacity: 0.8
+            });
+            const marker = new THREE.Mesh(geometry, material);
+            marker.position.copy(pos);
+            marker.renderOrder = debugRenderOrder;
+            marker.name = `hole_marker_${index}`;
+
+            this.debugObjects.push(marker);
+            this.sceneRoot?.add(marker);
+        });
+
+        console.log(`[ManualAssemblyManager] ${positions.length}개의 홈 중심점 마커 생성 완료`);
     }
 
     private visualizeAssemblyPath(
@@ -292,6 +381,7 @@ export class ManualAssemblyManager {
 
     private clearDebugObjects(): void {
         this.holeVisualizer.clearVisualizations();
+        this.normalBasedHighlight.clearHighlights();
 
         this.debugObjects.forEach((obj) => {
             this.sceneRoot?.remove(obj);
@@ -305,6 +395,11 @@ export class ManualAssemblyManager {
         });
         this.debugObjects = [];
     }
+
+
+
+
+
 
     /**
      * 댐퍼 커버 조립 (메타데이터 기반)
@@ -376,7 +471,8 @@ export class ManualAssemblyManager {
             grooveParams.plugClusteringDistance ?? 0.005
         );
 
-        // [NormalBasedHighlight] 법선 벡터 기반 다중 홈 탐지
+
+        /* // [NormalBasedHighlight] 법선 벡터 기반 다중 홈 탐지
         const normalBasedHoleAnalyses = NormalBasedHighlight.calculateMultipleVirtualPivotsByNormalAnalysis(
             assemblyNode,
             grooveParams.normalFilter
@@ -392,14 +488,19 @@ export class ManualAssemblyManager {
         console.log('[NormalBasedHighlight] 다중 홈 탐지 결과:', normalBasedHoleAnalyses);
 
         // 다중 홈 시각화
-        this.holeVisualizer.visualizeHoles(normalBasedHoleAnalyses);
+        this.holeVisualizer.visualizeHoles(normalBasedHoleAnalyses); */
 
 
 
+        const stencilHighlight = new StencilOutlineHighlight();
+        stencilHighlight.initialize(this.sceneRoot);
 
 
 
+        // 댐퍼 어셈블리 노드에서 홈 탐지 및 하이라이트 실행
+        await this.detectAndHighlightGrooves(LEFT_DOOR_DAMPER_ASSEMBLY_NODE);
 
+        return;
 
         // [Assembly 분석] 결합 홈(Hole) 탐지
         const holeAnalysesRaw = GrooveDetectionUtils.calculateMultipleVirtualPivotsByNormalAnalysis(
@@ -433,13 +534,16 @@ export class ManualAssemblyManager {
             plugWorldPos = primaryPlug.position;
             holeWorldPositions = holeAnalyses.map(a => a.position);
 
+            const currentPlugPos = plugWorldPos;
+            if (!currentPlugPos) throw new Error('[Assembly] Plug position is null');
+
             const primaryHoleWorldPos = holeWorldPositions.sort((a, b) => {
-                const distA = a.distanceTo(plugWorldPos!);
-                const distB = b.distanceTo(plugWorldPos!);
+                const distA = a.distanceTo(currentPlugPos!);
+                const distB = b.distanceTo(currentPlugPos!);
                 return distA - distB;
             })[0];
 
-            const moveDelta = new THREE.Vector3().subVectors(primaryHoleWorldPos, plugWorldPos);
+            const moveDelta = new THREE.Vector3().subVectors(primaryHoleWorldPos, currentPlugPos!);
             const currentCoverPos = coverNode.position.clone();
             targetPosition.addVectors(currentCoverPos, moveDelta);
         } else {
@@ -463,6 +567,8 @@ export class ManualAssemblyManager {
             holeWorldPositions.length > 0 ? holeWorldPositions : undefined
         );
 
+        const animationConfig = config?.animation;
+
         return new Promise((resolve) => {
             this.isAssemblyPlaying = true;
 
@@ -470,8 +576,8 @@ export class ManualAssemblyManager {
                 x: targetPosition.x,
                 y: targetPosition.y,
                 z: targetPosition.z,
-                duration: options?.duration || (config.animation?.duration ? config.animation.duration / 1000 : 1.5),
-                ease: config.animation?.easing || 'power2.inOut',
+                duration: options?.duration || (animationConfig?.duration ? animationConfig.duration / 1000 : 1.5),
+                ease: animationConfig?.easing || 'power2.inOut',
                 onComplete: () => {
                     this.clearDebugObjects();
                     this.isAssemblyPlaying = false;
@@ -527,4 +633,17 @@ export async function disassembleDamperCover(
 export async function runDamperAssembly(duration: number = 1500): Promise<void> {
     const manager = getManualAssemblyManager();
     await manager.assembleDamperCover({ duration });
+}
+
+/**
+ * 노드의 면을 하이라이트하고 홈을 찾아 중심점을 체크합니다.
+ */
+export async function detectAndHighlightGrooves(
+    sceneRoot: THREE.Object3D,
+    nodeName: string,
+    cameraControls: any
+): Promise<void> {
+    const manager = getManualAssemblyManager();
+    manager.initialize(sceneRoot, cameraControls);
+    await manager.detectAndHighlightGrooves(nodeName);
 }
