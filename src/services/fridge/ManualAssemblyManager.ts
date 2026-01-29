@@ -508,11 +508,6 @@ export class ManualAssemblyManager {
 
 
 
-        const stencilHighlight = new StencilOutlineHighlight();
-        stencilHighlight.initialize(this.sceneRoot);
-
-
-
         // 댐퍼 어셈블리 노드에서 홈 탐지 및 하이라이트 실행
         await this.detectAndHighlightGrooves(LEFT_DOOR_DAMPER_ASSEMBLY_NODE);
 
