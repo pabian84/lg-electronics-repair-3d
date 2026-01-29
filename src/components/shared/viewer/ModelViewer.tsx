@@ -272,7 +272,7 @@ function SelectionManager({
         while (parent && parent !== scene) {
           // 부모가 Mesh가 아닌 경우(Group 등)면 그 부모를 선택 대상으로 삼음
           // 단, Mesh가 직접 클릭된 경우는 그 Mesh의 최상위 부모까지 탐색
-          targetNode = parent;
+          // targetNode = parent;
           parent = parent.parent;
         }
         console.log('최종 선택된 노드: ', targetNode);

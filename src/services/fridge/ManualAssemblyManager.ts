@@ -364,6 +364,7 @@ export class ManualAssemblyManager {
             onComplete?: () => void;
         }
     ): Promise<void> {
+        console.log('assembleDamperCover!!!');
         // 1. Scene Root 확인
         if (!this.sceneRoot) {
             console.error('[ManualAssemblyManager] Scene root not initialized.');
@@ -372,6 +373,7 @@ export class ManualAssemblyManager {
 
         // 2. [Correction] 노드 직접 조회 (Service 의존성 제거)
         const coverNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_COVER_BODY_NODE) as THREE.Mesh;
+        console.log('coverNode>> ', coverNode);
         const assemblyNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE) as THREE.Mesh;
 
         // 3. 노드 존재 여부 검증
@@ -388,7 +390,7 @@ export class ManualAssemblyManager {
         // 4. [Cover 분석] 결합 돌출부(Plug) 탐지 - 다중 분석 후 최적의 클러스터 선택
         const plugAnalyses = GrooveDetectionUtils.calculateMultipleVirtualPivotsByNormalAnalysis(
             coverNode,
-            new THREE.Vector3(0, 0, 1),
+            new THREE.Vector3(0, 0, -1),
             0.5,
             0.02 // 돌출부는 더 촘촘하게 클러스터링
         );
@@ -432,6 +434,11 @@ export class ManualAssemblyManager {
                 : plugAnalyses[0];
 
             plugWorldPos = primaryPlug.position;
+            console.log('plugWorldPos>> ', plugWorldPos);
+            // plugWorldPos.x = -0.3998587599115846;
+            // plugWorldPos.y = 0.8245976256745101;
+            // plugWorldPos.z = 0.056940144055792646;
+
 
             // 모든 홈 위치 수집
             holeWorldPositions = holeAnalyses.map(a => a.position);
