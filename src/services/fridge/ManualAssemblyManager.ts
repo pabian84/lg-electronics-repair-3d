@@ -192,10 +192,18 @@ export class ManualAssemblyManager {
         const highlightColors = [0x00ff00, 0x0088ff, 0xff00ff, 0xffff00, 0xff8800];
         this.normalBasedHighlight.highlightClusters(holeAnalyses, highlightColors);
 
-        // 6. 탐지된 중심점에 마커 표시 (하이라이트 색상과 동기화)
-        if (holeAnalyses.length > 0) {
-            this.visualizeHoleCenters(holeAnalyses, highlightColors);
+        // 6. 탐지된 경계 루프(구멍 테두리) 시각화
+        const boundaryLoops = holeAnalyses
+            .filter(analysis => !!analysis.boundaryLoop)
+            .map(analysis => analysis.boundaryLoop as THREE.Vector3[]);
+
+        if (boundaryLoops.length > 0) {
+            this.normalBasedHighlight.highlightBoundaryLoops(boundaryLoops, 0xff0080); // 하늘색으로 테두리 표시
         }
+        // 7. 탐지된 중심점에 마커 표시 (하이라이트 색상과 동기화)
+        /* if (holeAnalyses.length > 0) {
+            this.visualizeHoleCenters(holeAnalyses, highlightColors);
+        } */
     }
 
     /**

@@ -344,6 +344,8 @@ export class GrooveDetectionUtils {
         insertionDirection: THREE.Vector3;
         filteredVerticesCount: number;
         vertices: THREE.Vector3[];
+        boundaryLoop?: THREE.Vector3[];
+        name?: string;
     }> {
         return NormalBasedHighlight.clusterFaces(faces, clusterThreshold);
     }

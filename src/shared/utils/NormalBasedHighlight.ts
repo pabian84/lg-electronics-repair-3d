@@ -540,6 +540,8 @@ export class NormalBasedHighlight {
         insertionDirection: THREE.Vector3;
         filteredVerticesCount: number;
         vertices: THREE.Vector3[];
+        boundaryLoop?: THREE.Vector3[]; // 추가
+        name?: string; // 추가
     }> {
         if (faces.length === 0) return [];
 
@@ -588,9 +590,9 @@ export class NormalBasedHighlight {
             }
         } while (merged);
 
-        return clusters
+        const results = clusters
             .filter(cluster => cluster.faces.length >= 2)
-            .map(cluster => {
+            .map((cluster, index) => {
                 const clusterBox = new THREE.Box3();
                 const avgNormal = new THREE.Vector3();
                 const allVertices: THREE.Vector3[] = [];
@@ -614,24 +616,193 @@ export class NormalBasedHighlight {
                     rotationAxis = new THREE.Vector3().crossVectors(avgNormal, new THREE.Vector3(1, 0, 0)).normalize();
                 }
 
+                console.log(`[NormalBasedHighlight] 클러스터 ${index} 분석: 면 수=${cluster.faces.length}, 중심=(${position.x.toFixed(3)}, ${position.y.toFixed(3)}, ${position.z.toFixed(3)})`);
+
                 return {
                     position,
                     rotationAxis,
                     insertionDirection: avgNormal,
                     filteredVerticesCount: cluster.faces.length * 3,
-                    vertices: allVertices
+                    vertices: allVertices,
+                    faces: cluster.faces // faces 정보 유지
                 };
             });
+
+        console.log(`[NormalBasedHighlight] 최종 탐지된 클러스터 수: ${results.length}`);
+
+        // [추가] 각 클러스터 내부의 구멍(Hole) 탐지 로직 적용
+        const finalResults: any[] = [];
+        results.forEach((cluster, index) => {
+            const holes = NormalBasedHighlight.detectHolesInCluster(cluster.faces);
+
+            if (holes.length > 0) {
+                console.log(`[NormalBasedHighlight] 클러스터 ${index}에서 ${holes.length}개의 구멍 탐지됨`);
+                holes.forEach((hole, hIdx) => {
+                    finalResults.push({
+                        position: hole.center,
+                        rotationAxis: cluster.rotationAxis,
+                        insertionDirection: cluster.insertionDirection,
+                        filteredVerticesCount: cluster.filteredVerticesCount,
+                        vertices: cluster.vertices,
+                        boundaryLoop: hole.loop, // 루프 데이터 추가
+                        name: `hole_${index}_${hIdx}`
+                    });
+                });
+            } else {
+                // 구멍이 없으면 클러스터 중심 사용
+                finalResults.push({
+                    position: cluster.position,
+                    rotationAxis: cluster.rotationAxis,
+                    insertionDirection: cluster.insertionDirection,
+                    filteredVerticesCount: cluster.filteredVerticesCount,
+                    vertices: cluster.vertices
+                });
+            }
+        });
+
+        return finalResults;
+    }
+    /**
+         * [신규] 탐지된 경계 루프(구멍 테두리)를 시각화합니다.
+         */
+    public highlightBoundaryLoops(
+        loops: THREE.Vector3[][],
+        color: number = 0x00ffff
+    ): void {
+        if (!this.sceneRoot) return;
+
+        loops.forEach(loop => {
+            const points: THREE.Vector3[] = [];
+            for (let i = 0; i < loop.length; i++) {
+                points.push(loop[i]);
+            }
+            // 루프를 닫기 위해 마지막 점과 첫 번째 점 연결
+            if (loop.length > 0) {
+                points.push(loop[0]);
+            }
+
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({
+                color: color,
+                linewidth: 2,
+                depthTest: false,
+                depthWrite: false,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            const line = new THREE.Line(geometry, material);
+            line.renderOrder = 1001;
+            this.sceneRoot?.add(line);
+            this.activeHighlights.push(line);
+        });
+
+        console.log(`[NormalBasedHighlight] ${loops.length}개의 경계 루프 시각화 완료`);
     }
 
     /**
-     * 정점 법선 벡터 분석을 통한 다중 가상 피벗(Multiple Virtual Pivots) 계산
-     * 홈이 여러 개인 경우 각 홈의 중심점을 클러스터링을 통해 추출합니다.
-     * @param targetNode 대상 노드
-     * @param normalFilter 필터링할 방향 법선 벡터
-     * @param normalTolerance 법선 허용 오차
-     * @param clusterThreshold 클러스터링 거리 임계값 (기본: 0.05m)
+     * [신규] 클러스터 내부의 구멍(경계선 루프)을 탐지합니다.
      */
+    private static detectHolesInCluster(clusterFaces: any[]): Array<{ center: THREE.Vector3, loop: THREE.Vector3[] }> {
+        const edgeCount = new Map<string, { v1: THREE.Vector3, v2: THREE.Vector3, count: number }>();
+
+        const getEdgeKey = (v1: THREE.Vector3, v2: THREE.Vector3) => {
+            const pts = [v1, v2].sort((a, b) => {
+                if (a.x !== b.x) return a.x - b.x;
+                if (a.y !== b.y) return a.y - b.y;
+                return a.z - b.z;
+            });
+            return `${pts[0].x.toFixed(6)},${pts[0].y.toFixed(6)},${pts[0].z.toFixed(6)}|${pts[1].x.toFixed(6)},${pts[1].y.toFixed(6)},${pts[1].z.toFixed(6)}`;
+        };
+
+        clusterFaces.forEach(face => {
+            const v = face.vertices;
+            const edges = [[v[0], v[1]], [v[1], v[2]], [v[2], v[0]]];
+            edges.forEach(([v1, v2]) => {
+                const key = getEdgeKey(v1, v2);
+                const existing = edgeCount.get(key);
+                if (existing) {
+                    existing.count++;
+                } else {
+                    edgeCount.set(key, { v1, v2, count: 1 });
+                }
+            });
+        });
+
+        const boundaryEdges = Array.from(edgeCount.values()).filter(e => e.count === 1);
+        if (boundaryEdges.length === 0) return [];
+
+        // 엣지들을 루프로 그룹화
+        const loops: THREE.Vector3[][] = [];
+        const visited = new Set<number>();
+
+        while (visited.size < boundaryEdges.length) {
+            let startIdx = -1;
+            for (let i = 0; i < boundaryEdges.length; i++) {
+                if (!visited.has(i)) {
+                    startIdx = i;
+                    break;
+                }
+            }
+            if (startIdx === -1) break;
+
+            const currentLoop: THREE.Vector3[] = [];
+            let currentEdge = boundaryEdges[startIdx];
+            visited.add(startIdx);
+            currentLoop.push(currentEdge.v1, currentEdge.v2);
+
+            let foundNext = true;
+            while (foundNext) {
+                foundNext = false;
+                const lastPoint = currentLoop[currentLoop.length - 1];
+                for (let i = 0; i < boundaryEdges.length; i++) {
+                    if (visited.has(i)) continue;
+                    const edge = boundaryEdges[i];
+                    if (edge.v1.distanceTo(lastPoint) < 0.0001) {
+                        currentLoop.push(edge.v2);
+                        visited.add(i);
+                        foundNext = true;
+                        break;
+                    } else if (edge.v2.distanceTo(lastPoint) < 0.0001) {
+                        currentLoop.push(edge.v1);
+                        visited.add(i);
+                        foundNext = true;
+                        break;
+                    }
+                }
+            }
+            loops.push(currentLoop);
+        }
+
+        // 루프가 1개 이하면 구멍이 없는 것으로 간주 (가장 바깥쪽 루프만 있는 경우)
+        if (loops.length <= 1) return [];
+
+        const loopInfos = loops.map(loop => {
+            const box = new THREE.Box3();
+            loop.forEach(p => box.expandByPoint(p));
+            const center = new THREE.Vector3();
+            box.getCenter(center);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            // 바운딩 박스의 대각선 길이를 면적 대용으로 사용
+            const area = size.length();
+            return { center, area, loop };
+        });
+
+        // 면적(크기) 기준 내림차순 정렬
+        loopInfos.sort((a, b) => b.area - a.area);
+
+        // 가장 큰 루프(바깥쪽 테두리)를 제외한 나머지 루프들 반환
+        return loopInfos.slice(1).map(info => ({ center: info.center, loop: info.loop }));
+    }
+    /**
+         * 정점 법선 벡터 분석을 통한 다중 가상 피벗(Multiple Virtual Pivots) 계산
+         * 홈이 여러 개인 경우 각 홈의 중심점을 클러스터링을 통해 추출합니다.
+         * @param targetNode 대상 노드
+         * @param normalFilter 필터링할 방향 법선 벡터
+         * @param normalTolerance 법선 허용 오차
+         * @param clusterThreshold 클러스터링 거리 임계값 (기본: 0.05m)
+         */
     public static calculateMultipleVirtualPivotsByNormalAnalysis(
         targetNode: THREE.Object3D,
         normalFilter: THREE.Vector3 = new THREE.Vector3(0, 0, 1),
