@@ -6,14 +6,23 @@
             "targetNode": "ACV74674704_Damper_Assembly_13473",
             "partNode": "MCK71751101_Cover,Body_3117001",
             "grooveDetection": {
-                "method": "bounding_box",
+                "method": "normal_filter",
                 "innerBoundRatio": 0.2,
                 "normalFilter": {
                     "x": 0,
                     "y": 0,
                     "z": 1
                 },
-                "normalTolerance": 0.2
+                "normalTolerance": 0.2,
+                "plugSearchDirection": {
+                    "x": 0,
+                    "y": -1,
+                    "z": 0
+                },
+                "edgeAngleThreshold": 60,
+                "plugClusteringDistance": 0.005,
+                "holeClusteringDistance": 0.005,
+                "maxVerticesThreshold": 2000
             },
             "insertion": {
                 "offset": {

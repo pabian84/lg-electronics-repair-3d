@@ -19,9 +19,14 @@ export interface AssemblyConfig {
     partNode: string;
     grooveDetection: {
         method: 'bounding_box' | 'normal_filter';
-        innerBoundRatio: number;
+        innerBoundRatio?: number;
         normalFilter: THREE.Vector3;
         normalTolerance: number;
+        plugSearchDirection?: THREE.Vector3;
+        edgeAngleThreshold?: number;
+        plugClusteringDistance?: number;
+        holeClusteringDistance?: number;
+        maxVerticesThreshold?: number;
     };
     insertion: {
         offset: THREE.Vector3;

@@ -415,8 +415,10 @@ export class ManualAssemblyManager {
     }
 
     /**
-     * [Modified] 댐퍼 커버 조립 (정점 법선 분석 기반 Auto-Snap 적용)
-     * 돌출부와 홈의 정점 데이터를 분석하여 자동으로 정확한 위치로 결합합니다.
+     * [Modified] 댐퍼 커버 조립 (하이브리드 방식: Metadata Mapping + 정점 법선 분석)
+     * 1단계: 메타데이터에서 미리 정의된 조립 설정을 확인합니다.
+     * 2단계: 메타데이터가 없으면 정점 법선 분석(가상 피벗)을 통해 자동으로 위치를 계산합니다.
+     * 3단계: 분석 실패 시 Bounding Box 기반 Fallback을 수행합니다.
      */
     public async assembleDamperCover(
         options?: {
@@ -424,19 +426,18 @@ export class ManualAssemblyManager {
             onComplete?: () => void;
         }
     ): Promise<void> {
-        console.log('assembleDamperCover!!!');
+        console.log('[Assembly] Starting Hybrid Assembly (Metadata + Vertex Analysis)...');
+
         // 1. Scene Root 확인
         if (!this.sceneRoot) {
             console.error('[ManualAssemblyManager] Scene root not initialized.');
             return;
         }
 
-        // 2. [Correction] 노드 직접 조회 (Service 의존성 제거)
+        // 2. 노드 조회
         const coverNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_COVER_BODY_NODE) as THREE.Mesh;
-        console.log('coverNode>> ', coverNode);
         const assemblyNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE) as THREE.Mesh;
 
-        // 3. 노드 존재 여부 검증
         if (!coverNode || !assemblyNode) {
             console.error('[ManualAssemblyManager] Target nodes not found for assembly:', {
                 coverName: LEFT_DOOR_DAMPER_COVER_BODY_NODE,
@@ -445,100 +446,143 @@ export class ManualAssemblyManager {
             return;
         }
 
-        console.log('[Assembly] Starting Vertex Normal Analysis for Auto-Snap...');
-
-        // 4. [Cover 분석] 결합 돌출부(Plug) 탐지 - 엣지 기반 탐지 (바깥쪽 테두리)
-        const plugAnalyses = GrooveDetectionUtils.calculatePlugByEdgeAnalysis(
-            coverNode,
-            new THREE.Vector3(0, -1, 0), // 위쪽 방향 탐색
-            60, // 엣지 각도 임계값
-            0.0055 // 클러스터링 거리 임계값
-        );
-        console.log('plugAnalyses>> ', plugAnalyses.length);
-        // 5. [Assembly 분석] 결합 홈(Hole) 탐지 - 다중 홈 탐지 적용
-        const holeAnalysesRaw = GrooveDetectionUtils.calculateMultipleVirtualPivotsByNormalAnalysis(
-            assemblyNode,
-            new THREE.Vector3(0, 0, 1),
-            0.5, // [수정] 0.6에서 0.2로 대폭 강화 (평면도가 높은 면만 추출)
-            0.5 // [수정] 2cm에서 5mm로 대폭 축소 (홈 바닥과 모델 윗면 분리 유도)
-        );
-
-        // [추가] 너무 큰 클러스터(모델 윗면 등) 제외 로직
-        // 홈은 보통 작으므로, 전체 바운딩 박스 크기의 일정 비율 이상인 클러스터는 제외
-        const assemblyBox = new THREE.Box3().setFromObject(assemblyNode);
-        const assemblySize = new THREE.Vector3();
-        assemblyBox.getSize(assemblySize);
-
-        const holeAnalyses = holeAnalysesRaw.filter(analysis => {
-            // 클러스터의 정점 수나 범위를 체크 (여기서는 간단히 로그 출력 후 필터링)
-            console.log(`[Assembly] 탐지된 클러스터: 위치(${analysis.position.x.toFixed(3)}, ${analysis.position.y.toFixed(3)}), 정점수: ${analysis.filteredVerticesCount}`);
-
-            // 너무 넓게 퍼진 클러스터는 홈이 아닐 가능성이 높음 (임시로 정점 수로 제한하거나 그대로 둠)
-            return analysis.filteredVerticesCount < 2000; // 예: 너무 거대한 면은 제외
-        });
-
-        // 클러스터 정점 위치 시각화
-        this.visualizeClusterVertices(plugAnalyses, holeAnalyses);
-
         let targetPosition = new THREE.Vector3();
         let plugWorldPos: THREE.Vector3 | null = null;
         let holeWorldPositions: THREE.Vector3[] = [];
+        let assemblyMethod = 'none';
 
-        // 6. 결합 위치 계산
-        if (plugAnalyses.length > 0 && holeAnalyses.length > 0) {
-            console.log(`[Assembly] Auto-Snap: 탐지 결과 - Plug: ${plugAnalyses.length}개, Hole: ${holeAnalyses.length}개`);
+        // --- Step 1: Metadata Mapping (보조 수단) ---
+        const metadataLoader = getMetadataLoader();
+        // 메타데이터 식별자 (메타데이터 파일의 키 사용)
+        const assemblyKey = 'damper_cover_assembly';
 
-            // [개선] 돌출부(Plug) 중 가장 유의미한 것 선택
-            // NormalBasedHighlight에서 이미 searchDirection(위쪽) 방향의 엣지만 필터링하므로,
-            // 그 중 가장 정점 데이터가 풍부한 클러스터를 선택합니다.
-            const validPlugs = plugAnalyses.filter(p => p.filteredVerticesCount < 2000);
-            const primaryPlug = validPlugs.length > 0
-                ? validPlugs.sort((a, b) => b.position.y - a.position.y)[0]
-                : plugAnalyses[0];
-
-            plugWorldPos = primaryPlug.position;
-            console.log('plugWorldPos>> ', plugWorldPos);
-            // plugWorldPos.x = -0.3998587599115846;
-            // plugWorldPos.y = 0.8245976256745101;
-            // plugWorldPos.z = 0.056940144055792646;
-
-
-            // 모든 홈 위치 수집
-            holeWorldPositions = holeAnalyses.map(a => a.position);
-
-            // [개선] 여러 홈 중 Plug와 가장 가까운 홈을 기준으로 조립
-            const primaryHoleWorldPos = holeWorldPositions.sort((a, b) => {
-                const distA = a.distanceTo(plugWorldPos!);
-                const distB = b.distanceTo(plugWorldPos!);
-                return distA - distB;
-            })[0];
-
-            // 이동 벡터(Delta) 계산: 홈 위치 - 돌출부 위치
-            const moveDelta = new THREE.Vector3().subVectors(primaryHoleWorldPos, plugWorldPos);
-
-            // 목표 위치 설정 (로컬 좌표계 기준)
-            const currentCoverPos = coverNode.position.clone();
-            targetPosition.addVectors(currentCoverPos, moveDelta);
-
-        } else {
-            console.warn('[Assembly] Auto-Snap: 정점 분석 실패. Fallback(BoundingBox) 실행.');
-
-            // Fallback: 기존 Bounding Box 방식
-            const holeCenter = GrooveDetectionUtils.calculateGrooveCenterByBoundingBox(assemblyNode);
-
-            if (holeCenter) {
-                targetPosition.copy(holeCenter);
-                holeWorldPositions = [holeCenter];
-                // 부모가 있다면 로컬 좌표로 변환
-                if (coverNode.parent) {
-                    coverNode.parent.worldToLocal(targetPosition);
-                }
-            } else {
-                targetPosition.set(0, 0, 0); // 최후의 안전장치
+        // 메타데이터가 로드되지 않은 경우 먼저 로드
+        if (!metadataLoader.isLoaded()) {
+            try {
+                console.log('[Assembly] Loading metadata from /metadata/assembly-offsets.json...');
+                await metadataLoader.loadMetadata('/metadata/assembly-offsets.json');
+                console.log('[Assembly] Metadata loaded successfully');
+                console.log('[Assembly] Available assemblies:', Object.keys(metadataLoader['metadata']?.assemblies || {}));
+            } catch (error) {
+                console.error('[Assembly] Metadata loading failed:', error);
             }
         }
 
-        // 7. 디버그 시각화: 조립 경로 표시
+        const config = metadataLoader.getAssemblyConfig(assemblyKey);
+        console.log('[Assembly] Config lookup result:', config ? 'Found' : 'Not found', 'for key:', assemblyKey);
+
+        if (config && config.insertion && config.insertion.offset) {
+            console.log('[Assembly] Metadata found. Applying predefined mapping.');
+
+            // 메타데이터에 정의된 오프셋 적용
+            // 주의: 메타데이터 오프셋은 보통 목표 지점의 로컬 좌표이거나 월드 좌표일 수 있음
+            // 여기서는 config.insertion.offset을 목표 로컬 좌표로 간주하여 처리
+            targetPosition.copy(config.insertion.offset);
+
+            // 시각화를 위해 대략적인 위치 설정 (옵션)
+            plugWorldPos = new THREE.Vector3();
+            coverNode.getWorldPosition(plugWorldPos);
+
+            const targetWorldPos = new THREE.Vector3();
+            if (coverNode.parent) {
+                coverNode.parent.localToWorld(targetWorldPos.copy(targetPosition));
+            } else {
+                targetWorldPos.copy(targetPosition);
+            }
+            holeWorldPositions = [targetWorldPos];
+
+            assemblyMethod = 'metadata';
+        }
+
+        // --- Step 2: Vertex Normal Analysis (기본 수단) ---
+        if (assemblyMethod === 'none') {
+            console.log('[Assembly] No metadata found. Proceeding with Vertex Normal Analysis...');
+
+            // 메타데이터에서 파라미터 읽기 (있는 경우) 또는 기본값 사용
+            const metadataConfig = metadataLoader.getAssemblyConfig(assemblyKey);
+            const grooveParams = metadataConfig?.grooveDetection;
+
+            // [Cover 분석] 결합 돌출부(Plug) 탐지
+            const plugAnalyses = GrooveDetectionUtils.calculatePlugByEdgeAnalysis(
+                coverNode,
+                grooveParams?.plugSearchDirection
+                    ? new THREE.Vector3(
+                        grooveParams.plugSearchDirection.x,
+                        grooveParams.plugSearchDirection.y,
+                        grooveParams.plugSearchDirection.z
+                    )
+                    : new THREE.Vector3(0, -1, 0),
+                grooveParams?.edgeAngleThreshold ?? 60,
+                grooveParams?.plugClusteringDistance ?? 0.005
+            );
+
+            // [Assembly 분석] 결합 홈(Hole) 탐지
+            const holeAnalysesRaw = GrooveDetectionUtils.calculateMultipleVirtualPivotsByNormalAnalysis(
+                assemblyNode,
+                grooveParams?.normalFilter
+                    ? new THREE.Vector3(
+                        grooveParams.normalFilter.x,
+                        grooveParams.normalFilter.y,
+                        grooveParams.normalFilter.z
+                    )
+                    : new THREE.Vector3(0, 0, 1),
+                grooveParams?.normalTolerance ?? 0.2,
+                grooveParams?.holeClusteringDistance ?? 0.005
+            );
+
+            const holeAnalyses = holeAnalysesRaw.filter(analysis =>
+                analysis.filteredVerticesCount < (grooveParams?.maxVerticesThreshold ?? 2000)
+            );
+
+            // 클러스터 정점 위치 시각화
+            this.visualizeClusterVertices(plugAnalyses, holeAnalyses);
+
+            if (plugAnalyses.length > 0 && holeAnalyses.length > 0) {
+                console.log(`[Assembly] Vertex Analysis success. Plug: ${plugAnalyses.length}, Hole: ${holeAnalyses.length}`);
+
+                const validPlugs = plugAnalyses.filter(p => p.filteredVerticesCount < 2000);
+                const primaryPlug = validPlugs.length > 0
+                    ? validPlugs.sort((a, b) => b.position.y - a.position.y)[0]
+                    : plugAnalyses[0];
+
+                plugWorldPos = primaryPlug.position;
+                holeWorldPositions = holeAnalyses.map(a => a.position);
+
+                const primaryHoleWorldPos = holeWorldPositions.sort((a, b) => {
+                    const distA = a.distanceTo(plugWorldPos!);
+                    const distB = b.distanceTo(plugWorldPos!);
+                    return distA - distB;
+                })[0];
+
+                const moveDelta = new THREE.Vector3().subVectors(primaryHoleWorldPos, plugWorldPos);
+                const currentCoverPos = coverNode.position.clone();
+                targetPosition.addVectors(currentCoverPos, moveDelta);
+
+                assemblyMethod = 'vertex_analysis';
+            }
+        }
+
+        // --- Step 3: Fallback (Bounding Box) ---
+        if (assemblyMethod === 'none') {
+            console.warn('[Assembly] Vertex analysis failed. Falling back to Bounding Box.');
+
+            const holeCenter = GrooveDetectionUtils.calculateGrooveCenterByBoundingBox(assemblyNode);
+            if (holeCenter) {
+                targetPosition.copy(holeCenter);
+                holeWorldPositions = [holeCenter];
+                if (coverNode.parent) {
+                    coverNode.parent.worldToLocal(targetPosition);
+                }
+                assemblyMethod = 'fallback_bbox';
+            } else {
+                console.error('[Assembly] All assembly methods failed.');
+                targetPosition.copy(coverNode.position); // 제자리 유지
+            }
+        }
+
+        console.log(`[Assembly] Final Method: ${assemblyMethod}, Target:`, targetPosition);
+
+        // 7. 디버그 시각화
         const currentCoverWorldPos = new THREE.Vector3();
         coverNode.getWorldPosition(currentCoverWorldPos);
         const targetWorldPos = new THREE.Vector3();
@@ -548,7 +592,6 @@ export class ManualAssemblyManager {
             targetWorldPos.copy(targetPosition);
         }
 
-        // 디버그 시각화 호출 (시작, 종료, 돌출부, 홈 배열)
         this.visualizeAssemblyPath(
             currentCoverWorldPos,
             targetWorldPos,
@@ -564,26 +607,12 @@ export class ManualAssemblyManager {
                 x: targetPosition.x,
                 y: targetPosition.y,
                 z: targetPosition.z,
-                duration: options?.duration || 1.5,
-                ease: 'power2.inOut',
-                onUpdate: () => {
-                    // 애니메이션 진행 중 디버그 시각화 업데이트
-                    const currentWorldPos = new THREE.Vector3();
-                    coverNode.getWorldPosition(currentWorldPos);
-                    const currentTargetWorldPos = new THREE.Vector3();
-                    if (coverNode.parent) {
-                        coverNode.parent.localToWorld(currentTargetWorldPos.copy(targetPosition));
-                    } else {
-                        currentTargetWorldPos.copy(targetPosition);
-                    }
-                    // 진행 상황 로그 (100%마다 출력)
-                    // const progress = coverNode.position.distanceTo(targetPosition) / startToTargetDistance;
-                },
+                duration: options?.duration || (config?.animation?.duration ? config.animation.duration / 1000 : 1.5),
+                ease: config?.animation?.easing || 'power2.inOut',
                 onComplete: () => {
-                    // 애니메이션 완료 후 디버그 객체 정리
                     this.clearDebugObjects();
                     this.isAssemblyPlaying = false;
-                    console.log('[Assembly] 결합 완료');
+                    console.log(`[Assembly] Completed using ${assemblyMethod}`);
                     if (options?.onComplete) options.onComplete();
                     resolve();
                 }
