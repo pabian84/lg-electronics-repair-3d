@@ -181,9 +181,10 @@ export class ManualAssemblyManager {
 
         // 4. 홈 탐지 및 중심점 계산
         // 하이라이트된 메쉬의 폴리곤들을 공간적으로 그룹화(Clustering)하여 개별 홈 영역을 탐지
+        // 클러스터링 임계값을 2cm로 상향하여 끊어진 면들을 하나로 연결
         const holeAnalyses = GrooveDetectionUtils.clusterFacesToGrooves(
             highlightedFaces,
-            0.005
+            0.02
         );
 
         console.log(`[ManualAssemblyManager] ${holeAnalyses.length}개의 홈이 탐지되었습니다.`);
@@ -198,7 +199,7 @@ export class ManualAssemblyManager {
             .map(analysis => analysis.boundaryLoop as THREE.Vector3[]);
 
         if (boundaryLoops.length > 0) {
-            this.normalBasedHighlight.highlightBoundaryLoops(boundaryLoops, 0xff0080); // 하늘색으로 테두리 표시
+            this.normalBasedHighlight.highlightBoundaryLoops(boundaryLoops, 0xff0080); // 테두리 표시
         }
         // 7. 탐지된 중심점에 마커 표시 (하이라이트 색상과 동기화)
         /* if (holeAnalyses.length > 0) {

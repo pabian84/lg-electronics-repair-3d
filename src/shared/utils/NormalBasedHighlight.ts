@@ -416,7 +416,7 @@ export class NormalBasedHighlight {
             this.activeHighlights.push(edgesLine, fillMesh);
         });
 
-        console.log(`[NormalBasedHighlight] ${clusters.length}개의 클러스터 하이라이트 완료`);
+        // console.log(`[NormalBasedHighlight] ${clusters.length}개의 클러스터 하이라이트 완료`);
     }
 
     /**
@@ -777,7 +777,7 @@ export class NormalBasedHighlight {
         // 루프가 1개 이하면 구멍이 없는 것으로 간주 (가장 바깥쪽 루프만 있는 경우)
         if (loops.length <= 1) return [];
 
-        const loopInfos = loops.map(loop => {
+        const loopInfos = loops.map((loop, lIdx) => {
             const box = new THREE.Box3();
             loop.forEach(p => box.expandByPoint(p));
             const center = new THREE.Vector3();
@@ -786,6 +786,7 @@ export class NormalBasedHighlight {
             box.getSize(size);
             // 바운딩 박스의 대각선 길이를 면적 대용으로 사용
             const area = size.length();
+            console.log(`[NormalBasedHighlight] 루프 ${lIdx} 분석: 점 수=${loop.length}, 크기(대각선)=${area.toFixed(4)}`);
             return { center, area, loop };
         });
 
@@ -793,16 +794,19 @@ export class NormalBasedHighlight {
         loopInfos.sort((a, b) => b.area - a.area);
 
         // 가장 큰 루프(바깥쪽 테두리)를 제외한 나머지 루프들 반환
+        // 루프가 1개뿐이면 바깥쪽 테두리만 있는 것이므로 빈 배열 반환
+        if (loopInfos.length <= 1) return [];
+
         return loopInfos.slice(1).map(info => ({ center: info.center, loop: info.loop }));
     }
     /**
-         * 정점 법선 벡터 분석을 통한 다중 가상 피벗(Multiple Virtual Pivots) 계산
-         * 홈이 여러 개인 경우 각 홈의 중심점을 클러스터링을 통해 추출합니다.
-         * @param targetNode 대상 노드
-         * @param normalFilter 필터링할 방향 법선 벡터
-         * @param normalTolerance 법선 허용 오차
-         * @param clusterThreshold 클러스터링 거리 임계값 (기본: 0.05m)
-         */
+             * 정점 법선 벡터 분석을 통한 다중 가상 피벗(Multiple Virtual Pivots) 계산
+             * 홈이 여러 개인 경우 각 홈의 중심점을 클러스터링을 통해 추출합니다.
+             * @param targetNode 대상 노드
+             * @param normalFilter 필터링할 방향 법선 벡터
+             * @param normalTolerance 법선 허용 오차
+             * @param clusterThreshold 클러스터링 거리 임계값 (기본: 0.05m)
+             */
     public static calculateMultipleVirtualPivotsByNormalAnalysis(
         targetNode: THREE.Object3D,
         normalFilter: THREE.Vector3 = new THREE.Vector3(0, 0, 1),
