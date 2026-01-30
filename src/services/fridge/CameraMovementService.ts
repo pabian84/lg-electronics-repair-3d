@@ -3,7 +3,6 @@ import { getNodeNameManager } from '../../shared/utils/NodeNameManager';
 import { LEFT_DOOR_NODES } from '../../shared/utils/fridgeConstants';
 import * as THREE from 'three';
 import { getPreciseBoundingBox } from '../../shared/utils/commonUtils';
-import { findNodeHeight } from '../../shared/utils/findNodeHeight'
 
 // ============================================================================
 // Camera movement options
@@ -43,41 +42,12 @@ export class CameraMovementService {
         const nodeNameManager = getNodeNameManager();
         const damperCoverBodyNode = nodeNameManager.getNodeName('fridge.leftDoor.damperCoverBody') || 'MCK71751101_Cover,Body_3117001';
 
-        /* const targetNode = this.getNodeByName(damperCoverBodyNode);
-        if (targetNode) {
-            const camera = this.cameraControls.camera || this.cameraControls.object;
-            if (camera) {
-                findNodeHeight(this.sceneRoot || targetNode, camera, this.cameraControls, {
-                    highlightNodeName: damperCoverBodyNode,
-                    matchMode: 'equals',
-                    boxColor: 0x00ff00 // 녹색으로 변경
-                });
-            }
-        } */
-
         return this.moveCameraCinematic(LEFT_DOOR_NODES[0], {
             duration: options.duration || 1000,
             direction: options.direction || upwardDirection,
             zoomRatio: options.zoomRatio || 3,
             easing: options.easing || 'power3.inOut',
             ...options
-        });
-    }
-
-    // Move camera to node (for backward compatibility)
-    public async moveCameraToNode(nodeName: string, options: CameraMoveOptions = {}): Promise<void> {
-        return this.moveCameraCinematic(nodeName, options);
-    }
-
-    // Move camera to upward view (for backward compatibility)
-    public async moveCameraToUpwardView(nodeName: string, options: CameraMoveOptions = {}): Promise<void> {
-        const upwardDirection = new THREE.Vector3(0, -1, 0).normalize();
-
-        return this.moveCameraCinematic(nodeName, {
-            ...options,
-            direction: options.direction || upwardDirection,
-            zoomRatio: options.zoomRatio || 3,
-            easing: options.easing || 'power3.inOut'
         });
     }
 
@@ -306,11 +276,5 @@ export class CameraMovementService {
     // Set camera controls reference
     public setCameraControls(cameraControls: any): void {
         this.cameraControls = cameraControls;
-    }
-
-    // Get the camera object
-    public getCamera(): THREE.Camera | null {
-        console.log('this.cameraControls>> ', this.cameraControls);
-        return this.cameraControls?.camera || this.cameraControls?.object || null;
     }
 }
