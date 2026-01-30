@@ -1,5 +1,5 @@
 import gsap from 'gsap';
-// import { LEFT_DOOR_DAMPER_COVER_BODY_NODE, LEFT_DOOR_DAMPER_ASSEMBLY_NODE, LEFT_DOOR_SCREW1_CUSTOMIZED_NODE, LEFT_DOOR_SCREW2_CUSTOMIZED_NODE } from '../../shared/utils/fridgeConstants';
+import { getNodeNameManager } from '../../shared/utils/NodeNameManager';
 import { LEFT_DOOR_NODES } from '../../shared/utils/fridgeConstants';
 import * as THREE from 'three';
 import { getPreciseBoundingBox } from '../../shared/utils/commonUtils';
@@ -40,12 +40,15 @@ export class CameraMovementService {
         const upwardDirection = new THREE.Vector3(0, -1, 0).normalize();
 
         // LEFT_DOOR_DAMPER_COVER_BODY_NODE 노드를 하이라이트
-        /* const targetNode = this.getNodeByName(LEFT_DOOR_DAMPER_COVER_BODY_NODE);
+        const nodeNameManager = getNodeNameManager();
+        const damperCoverBodyNode = nodeNameManager.getNodeName('fridge.leftDoor.damperCoverBody') || 'MCK71751101_Cover,Body_3117001';
+
+        /* const targetNode = this.getNodeByName(damperCoverBodyNode);
         if (targetNode) {
             const camera = this.cameraControls.camera || this.cameraControls.object;
             if (camera) {
                 findNodeHeight(this.sceneRoot || targetNode, camera, this.cameraControls, {
-                    highlightNodeName: LEFT_DOOR_DAMPER_COVER_BODY_NODE,
+                    highlightNodeName: damperCoverBodyNode,
                     matchMode: 'equals',
                     boxColor: 0x00ff00 // 녹색으로 변경
                 });
@@ -115,8 +118,11 @@ export class CameraMovementService {
         let direction = options.direction || new THREE.Vector3(0, -1, 0);
 
         // 특정 노드(왼쪽 도어 댐퍼)에 대해 일관된 뷰를 제공하도록 방향 강제
-        // if (nodeName === LEFT_DOOR_DAMPER_COVER_BODY_NODE && !options.direction) {
-        if (nodeName === LEFT_DOOR_NODES[0] && !options.direction) {
+        const nodeNameManager = getNodeNameManager();
+        const damperCoverBodyNode = nodeNameManager.getNodeName('fridge.leftDoor.damperCoverBody') || 'MCK71751101_Cover,Body_3117001';
+
+        // if (nodeName === damperCoverBodyNode && !options.direction) {
+        if (nodeName === damperCoverBodyNode && !options.direction) {
             direction = new THREE.Vector3(0.5, -1, 0.5).normalize();
         }
 
@@ -233,6 +239,7 @@ export class CameraMovementService {
 
 
                     // 카메라 이동 완료 후 노드 하이라이트 (Emissive 방식)
+                    const nodeNameManager = getNodeNameManager();
                     const nodeColors = [
                         0x325311, // 녹색 (Cover Body) - 발광 효과를 위해 채도를 높인 값 권장
                         0xff3333, // 빨간색 (Damper Assembly)
@@ -246,7 +253,6 @@ export class CameraMovementService {
                         const node = this.getNodeByName(nodeName);
                         if (node) {
                             console.log(`[Highlight - Emissive] Target: ${nodeName}`);
-
                             // 노드 내부의 모든 Mesh를 탐색하여 재질 수정
                             node.traverse((child) => {
                                 if (child instanceof THREE.Mesh) {
@@ -265,7 +271,6 @@ export class CameraMovementService {
                                     }
                                 }
                             });
-
                         }
                     });
 

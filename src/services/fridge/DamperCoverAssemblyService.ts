@@ -1,9 +1,6 @@
 import * as THREE from 'three';
 import gsap from 'gsap';
-import {
-    LEFT_DOOR_DAMPER_COVER_BODY_NODE,
-    LEFT_DOOR_DAMPER_ASSEMBLY_NODE
-} from '../../shared/utils/fridgeConstants';
+import { getNodeNameManager } from '../../shared/utils/NodeNameManager';
 import { getMetadataLoader } from '../../shared/utils/MetadataLoader';
 import { GrooveDetectionUtils } from '../../shared/utils/GrooveDetectionUtils';
 import { getAssemblyPathVisualizer } from '../../shared/utils/AssemblyPathVisualizer';
@@ -44,13 +41,18 @@ export class DamperCoverAssemblyService {
             return;
         }
 
-        const coverNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_COVER_BODY_NODE) as THREE.Mesh;
-        const assemblyNode = this.sceneRoot.getObjectByName(LEFT_DOOR_DAMPER_ASSEMBLY_NODE) as THREE.Mesh;
+        const nodeNameManager = getNodeNameManager();
+        const coverNode = this.sceneRoot.getObjectByName(
+            nodeNameManager.getNodeName('fridge.leftDoor.damperCoverBody')!
+        ) as THREE.Mesh;
+        const assemblyNode = this.sceneRoot.getObjectByName(
+            nodeNameManager.getNodeName('fridge.leftDoor.damperAssembly')!
+        ) as THREE.Mesh;
 
         if (!coverNode || !assemblyNode) {
             console.error('[DamperCoverAssemblyService] Target nodes not found for assembly:', {
-                coverName: LEFT_DOOR_DAMPER_COVER_BODY_NODE,
-                assemblyName: LEFT_DOOR_DAMPER_ASSEMBLY_NODE
+                coverName: nodeNameManager.getNodeName('fridge.leftDoor.damperCoverBody'),
+                assemblyName: nodeNameManager.getNodeName('fridge.leftDoor.damperAssembly')
             });
             return;
         }
@@ -98,7 +100,9 @@ export class DamperCoverAssemblyService {
         );
 
         // 댐퍼 어셈블리 노드에서 홈 탐지 및 하이라이트 실행
-        await this.grooveDetectionService.detectAndHighlightGrooves(LEFT_DOOR_DAMPER_ASSEMBLY_NODE);
+        await this.grooveDetectionService.detectAndHighlightGrooves(
+            nodeNameManager.getNodeName('fridge.leftDoor.damperAssembly')!
+        );
 
         // 탐지된 홈 중심점 정보 가져오기
         const holeCenters = this.grooveDetectionService.getHoleCenters();

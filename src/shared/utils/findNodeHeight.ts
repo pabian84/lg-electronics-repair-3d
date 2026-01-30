@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { invalidate } from '@react-three/fiber';
 import { getPreciseBoundingBox, debugFocusCamera, createHighlightMaterial } from './commonUtils';
-const HighlightNode = 'MCK71751101_Cover,Body_3117001';
+import { getNodeNameManager } from './NodeNameManager';
 
 // const highlightMaterial = createHighlightMaterial(0xff0000, 0.3);
 
@@ -58,7 +58,8 @@ export const findNodeHeight = (
         append?: boolean;
     }
 ) => {
-    const highlightNodeName = options?.highlightNodeName ?? HighlightNode;
+    const nodeNameManager = getNodeNameManager();
+    const highlightNodeName = options?.highlightNodeName ?? (nodeNameManager.getNodeName('fridge.leftDoor.damperCoverBody') || 'MCK71751101_Cover,Body_3117001');
     const matchMode = options?.matchMode ?? 'includes';
     const duration = options?.duration ?? 1.0;
     const boxColor = options?.boxColor ?? 0xffff00;

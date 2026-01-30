@@ -8,7 +8,7 @@ import { PartAssemblyService } from "../../../services/fridge/PartAssemblyServic
 import { getManualAssemblyManager } from "../../../services/fridge/ManualAssemblyManager";
 import { getClickPointMarker, resetClickPointMarker } from "../../../shared/utils/ClickPointMarker";
 import "./ModelViewer.css";
-import { DamperAssemblyService, getDamperAssemblyService } from '../../../services/fridge/DamperAssemblyService';
+import { getDamperAssemblyService } from '../../../services/fridge/DamperAssemblyService';
 // import { removeClickedNode } from "../../../shared/utils/removeClickedNode";
 // import { findNodeHeight } from "../../../shared/utils/findNodeHeight";
 

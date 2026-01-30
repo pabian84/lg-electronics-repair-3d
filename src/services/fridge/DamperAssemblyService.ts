@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { NormalBasedHighlight } from '../../shared/utils/NormalBasedHighlight';
+import { getNodeNameManager } from '../../shared/utils/NodeNameManager';
 
 /**
  * 댐퍼 조립 서비스 (조립 기능은 ManualAssemblyManager로 이동됨)
@@ -62,8 +63,13 @@ export class DamperAssemblyService {
             return;
         }
 
-        const damperAssembly = this.sceneRoot.getObjectByName('ACV74674704_Damper_Assembly_13473');
-        const damperCover = this.sceneRoot.getObjectByName('MCK71751101_Cover,Body_3117001');
+        const nodeNameManager = getNodeNameManager();
+        const damperAssembly = this.sceneRoot.getObjectByName(
+            nodeNameManager.getNodeName('fridge.leftDoor.damperAssembly')!
+        );
+        const damperCover = this.sceneRoot.getObjectByName(
+            nodeNameManager.getNodeName('fridge.leftDoor.damperCoverBody')!
+        );
 
         console.log('=== Damper Assembly 노드 구조 ===');
         this.printNodeNames(damperAssembly);

@@ -786,7 +786,7 @@ export class NormalBasedHighlight {
             box.getSize(size);
             // 바운딩 박스의 대각선 길이를 면적 대용으로 사용
             const area = size.length();
-            console.log(`[NormalBasedHighlight] 루프 ${lIdx} 분석: 점 수=${loop.length}, 크기(대각선)=${area.toFixed(4)}`);
+            // console.log(`[NormalBasedHighlight] 루프 ${lIdx} 분석: 점 수=${loop.length}, 크기(대각선)=${area.toFixed(4)}`);
             return { center, area, loop };
         });
 

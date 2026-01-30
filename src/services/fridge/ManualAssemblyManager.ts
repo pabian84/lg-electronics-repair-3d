@@ -1,10 +1,6 @@
 import * as THREE from 'three';
 import { PartAssemblyService } from './PartAssemblyService';
-import {
-    LEFT_DOOR_DAMPER_COVER_BODY_NODE,
-    LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
-    DAMPER_COVER_SLOT_OFFSET
-} from '../../shared/utils/fridgeConstants';
+import { getNodeNameManager } from '../../shared/utils/NodeNameManager';
 import { getDamperAssemblyService } from './DamperAssemblyService';
 import { getDamperCoverAssemblyService } from './DamperCoverAssemblyService';
 import { getGrooveDetectionService } from '../../shared/utils/GrooveDetectionService';
@@ -47,9 +43,12 @@ export class ManualAssemblyManager {
         console.log('[ManualAssemblyManager] 분해 시작');
         this.assemblyStateManager.startAssembly();
 
+        const nodeNameManager = getNodeNameManager();
+        const damperCoverBodyNode = nodeNameManager.getNodeName('fridge.leftDoor.damperCoverBody') || 'MCK71751101_Cover,Body_3117001';
+
         try {
             await this.partAssemblyService.disassemblePart(
-                LEFT_DOOR_DAMPER_COVER_BODY_NODE,
+                damperCoverBodyNode,
                 {
                     duration: options?.duration || 1500,
                     onComplete: () => {

@@ -941,9 +941,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
 
         const responseVerb = await responseVerbPromise;
         console.log('Damper service response verb:', responseVerb);
-        const message = locale === 'ko'
-          ? '댐퍼 서비스를 위해 문을 열고 있습니다'
-          : 'Opening doors for damper service';
+        const message = 'Opening doors for damper service';
 
         // Calculate max speed to determine animation duration
         const maxSpeed = Math.max(...commandsArray.map(cmd => cmd.speed || 1));
@@ -964,14 +962,12 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
             degrees: 0,
             speed: 1
           };
-          const cameraMessage = locale === 'ko'
-            ? '댐퍼 위치로 카메라 이동 완료'
-            : 'Camera moved to damper position';
+          const cameraMessage = 'Camera moved to damper position';
           if (this.animationHistoryService) {
-            console.log('[CAMERA-HISTORY] Recording camera movement to history');
+            console.log('Recording camera movement to history');
             this.animationHistoryService.addAnimationHistory(cameraMoveCommand, cameraMessage);
           } else {
-            console.warn('[CAMERA-HISTORY] Animation history service not available');
+            console.warn('Animation history service not available');
           }
         } else {
           console.log('CameraMovementService is not initialized');

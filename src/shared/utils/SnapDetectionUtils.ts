@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import gsap from 'gsap';
+import { getNodeNameManager } from './NodeNameManager';
 
 /**
  * 스냅 존 설정 인터페이스
@@ -158,6 +159,9 @@ export class SnapDetectionUtils {
         threshold: number,
         color: number = 0x00ff00
     ): THREE.Mesh {
+        const nodeNameManager = getNodeNameManager();
+        const helperName = nodeNameManager.getNodeName('helpers.snapZoneHelper') || 'SnapZoneHelper';
+
         const geometry = new THREE.SphereGeometry(threshold, 16, 16);
         const material = new THREE.MeshBasicMaterial({
             color,
@@ -168,7 +172,7 @@ export class SnapDetectionUtils {
 
         const sphere = new THREE.Mesh(geometry, material);
         sphere.position.copy(targetPos);
-        sphere.name = 'SnapZoneHelper';
+        sphere.name = helperName;
         scene.add(sphere);
 
         return sphere;
@@ -183,7 +187,9 @@ export class SnapDetectionUtils {
      * SnapDetectionUtils.removeSnapZoneHelper(scene);
      */
     static removeSnapZoneHelper(scene: THREE.Scene): void {
-        const helper = scene.getObjectByName('SnapZoneHelper');
+        const nodeNameManager = getNodeNameManager();
+        const helperName = nodeNameManager.getNodeName('helpers.snapZoneHelper') || 'SnapZoneHelper';
+        const helper = scene.getObjectByName(helperName);
         if (helper) {
             scene.remove(helper);
             if (helper instanceof THREE.Mesh) {
