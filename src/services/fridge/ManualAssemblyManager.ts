@@ -44,48 +44,6 @@ export class ManualAssemblyManager {
         console.log('[ManualAssemblyManager] 초기화 완료');
     }
 
-    public async prepareManualAssembly(options?: {
-        duration?: number;
-        snapThreshold?: number;
-        onProgress?: (progress: number) => void;
-        onComplete?: () => void;
-    }): Promise<void> {
-        if (!this.partAssemblyService || !this.sceneRoot) {
-            throw new Error('[ManualAssemblyManager] 초기화되지 않았습니다. initialize()를 먼저 호출하세요.');
-        }
-
-        console.log('[ManualAssemblyManager] 조립 준비 시작');
-        this.assemblyStateManager.startAssembly();
-
-        try {
-            await this.partAssemblyService.animateLinearAssembly(
-                LEFT_DOOR_DAMPER_COVER_BODY_NODE,
-                LEFT_DOOR_DAMPER_ASSEMBLY_NODE,
-                {
-                    duration: options?.duration || 2500,
-                    slotOffset: DAMPER_COVER_SLOT_OFFSET,
-                    onProgress: (progress) => {
-                        this.assemblyStateManager.updateProgress(progress);
-                        options?.onProgress?.(progress);
-                    },
-                    onComplete: () => {
-                        console.log('[ManualAssemblyManager] 조립 완료');
-                        this.assemblyStateManager.completeAssembly();
-                        options?.onComplete?.();
-                    }
-                }
-            );
-        } catch (error) {
-            console.error('[ManualAssemblyManager] 조립 실패:', error);
-            this.assemblyStateManager.stopAssembly();
-            throw error;
-        }
-    }
-
-    public updateManualProgress(progress: number): void {
-        this.assemblyStateManager.updateProgress(progress);
-    }
-
     public async disassembleDamperCover(options?: {
         duration?: number;
         onComplete?: () => void;
@@ -199,25 +157,6 @@ export function getManualAssemblyManager(): ManualAssemblyManager {
         manualAssemblyManagerInstance = new ManualAssemblyManager();
     }
     return manualAssemblyManagerInstance;
-}
-
-export async function prepareManualAssembly(
-    sceneRoot: THREE.Object3D,
-    options?: {
-        duration?: number;
-        snapThreshold?: number;
-        onProgress?: (progress: number) => void;
-        onComplete?: () => void;
-    }
-): Promise<void> {
-    const manager = getManualAssemblyManager();
-    manager.initialize(sceneRoot);
-    await manager.prepareManualAssembly(options);
-}
-
-export function updateManualProgress(progress: number): void {
-    const manager = getManualAssemblyManager();
-    manager.updateManualProgress(progress);
 }
 
 export async function disassembleDamperCover(

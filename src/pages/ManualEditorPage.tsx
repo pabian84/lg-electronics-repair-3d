@@ -1,21 +1,17 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import type { Object3D } from "three";
 import * as THREE from "three";
-import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
+// import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { ModelViewer } from "@/components/shared/viewer";
-import { animatorAgent, type LLMResponse, AnimationAction } from "@/services/AnimatorAgent";
+import { animatorAgent, type LLMResponse, } from "@/services/AnimatorAgent";
 import { AnimationHistoryService } from "@/services/AnimationHistoryService";
 import { ManualEditorSidebar } from "@/components/pages/manual-editor";
 import { AnimationHistoryPanel, type AnimationHistoryItem } from "@/components/pages/manual-editor";
-import { DamperAssemblyService, getDamperAssemblyService } from "@/services/fridge/DamperAssemblyService";
+
 import {
   ManualAssemblyManager,
-  getManualAssemblyManager,
-  prepareManualAssembly,
-  updateManualProgress,
-  runDamperAssembly
+  getManualAssemblyManager
 } from "@/services/fridge/ManualAssemblyManager";
-import { getNodeHierarchy, exportHierarchyToJson } from "@/shared/utils/commonUtils";
 import "./ManualEditorPage.css";
 
 type ManualEditorPageProps = {
@@ -238,7 +234,6 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
   const animationHistoryService = useMemo(() => new AnimationHistoryService(), []);
   const [manualAssemblyManager, setManualAssemblyManager] = useState<ManualAssemblyManager | null>(null);
   const [isAssemblyPlaying, setIsAssemblyPlaying] = useState(false);
-  const [assemblyProgress, setAssemblyProgress] = useState(0);
 
   // 로컬 스토리지에서 히스토리 로드
   useEffect(() => {
@@ -633,7 +628,6 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
 
     console.log('[ManualEditor] 댐퍼 커버 조립 시작');
     setIsAssemblyPlaying(true);
-    setAssemblyProgress(0);
 
     try {
       await manualAssemblyManager.assembleDamperCover({
@@ -641,158 +635,12 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
         onComplete: () => {
           console.log('[ManualEditor] 댐퍼 커버 조립 완료');
           setIsAssemblyPlaying(false);
-          setAssemblyProgress(1);
         }
       });
     } catch (error) {
       console.error('[ManualEditor] 댐퍼 커버 조립 실패:', error);
       setIsAssemblyPlaying(false);
     }
-  };
-
-  // 테스트: 가상 피벗 기반 조립 테스트
-  const handleTestVirtualPivotAssembly = async () => {
-    if (!manualAssemblyManager) {
-      console.error('[ManualEditor] ManualAssemblyManager가 초기화되지 않음');
-      return;
-    }
-
-    if (manualAssemblyManager.isPlaying()) {
-      console.warn('[ManualEditor] 애니메이션이 이미 실행 중');
-      return;
-    }
-
-    console.log('[ManualEditor] 가상 피벗 기반 조립 테스트 시작');
-    setIsAssemblyPlaying(true);
-    setAssemblyProgress(0);
-
-    try {
-      await manualAssemblyManager.assembleDamperCover({
-        duration: 1500,
-        onComplete: () => {
-          console.log('[ManualEditor] 가상 피벗 기반 조립 테스트 완료');
-          setIsAssemblyPlaying(false);
-          setAssemblyProgress(1);
-        }
-      });
-    } catch (error) {
-      console.error('[ManualEditor] 가상 피벗 기반 조립 테스트 실패:', error);
-      setIsAssemblyPlaying(false);
-    }
-  };
-
-  // 조립 준비 (prepareManualAssembly)
-  const handlePrepareAssembly = async () => {
-    if (!manualAssemblyManager) {
-      console.error('[ManualEditor] ManualAssemblyManager가 초기화되지 않음');
-      return;
-    }
-
-    if (manualAssemblyManager.isPlaying()) {
-      console.warn('[ManualEditor] 애니메이션이 이미 실행 중');
-      return;
-    }
-
-    console.log('[ManualEditor] 조립 시작');
-    setIsAssemblyPlaying(true);
-    setAssemblyProgress(0);
-
-    try {
-      await manualAssemblyManager.prepareManualAssembly({
-        duration: 2500,
-        snapThreshold: 0.2,
-        onProgress: (progress: number) => {
-          setAssemblyProgress(progress);
-        },
-        onComplete: () => {
-          console.log('[ManualEditor] 조립 완료');
-          setIsAssemblyPlaying(false);
-        }
-      });
-    } catch (error) {
-      console.error('[ManualEditor] 조립 실패:', error);
-      setIsAssemblyPlaying(false);
-    }
-  };
-
-  // 진행률 업데이트 (updateManualProgress)
-  const handleUpdateProgress = (progress: number) => {
-    if (!manualAssemblyManager) {
-      console.warn('[ManualEditor] ManualAssemblyManager가 초기화되지 않음');
-      return;
-    }
-    manualAssemblyManager.updateManualProgress(progress);
-    setAssemblyProgress(progress);
-  };
-
-  // 분해 (disassemble)
-  const handleDisassemble = async () => {
-    if (!manualAssemblyManager) {
-      console.error('[ManualEditor] ManualAssemblyManager가 초기화되지 않음');
-      return;
-    }
-
-    if (manualAssemblyManager.isPlaying()) {
-      console.warn('[ManualEditor] 애니메이션이 이미 실행 중');
-      return;
-    }
-
-    console.log('[ManualEditor] 분해 시작');
-    setIsAssemblyPlaying(true);
-    setAssemblyProgress(0);
-
-    try {
-      await manualAssemblyManager.disassembleDamperCover({
-        duration: 1500,
-        onComplete: () => {
-          console.log('[ManualEditor] 분해 완료');
-          setIsAssemblyPlaying(false);
-        }
-      });
-    } catch (error) {
-      console.error('[ManualEditor] 분해 실패:', error);
-      setIsAssemblyPlaying(false);
-    }
-  };
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleExportHistory = () => {
-    if (!sceneRoot) {
-      return;
-    }
-
-    const ordered = historyItems
-      .filter((item) => item.checked && item.order !== undefined && item.command)
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-
-    if (ordered.length === 0) {
-      return;
-    }
-
-    const exportScene = sceneRoot.clone(true);
-    const clip = buildAnimationClip(exportScene, ordered);
-    if (!clip) {
-      return;
-    }
-
-    exportScene.updateMatrixWorld(true);
-    const exporter = new GLTFExporter();
-    exporter.parse(
-      exportScene,
-      (result) => {
-        if (result instanceof ArrayBuffer) {
-          const blob = new Blob([result], { type: "model/gltf-binary" });
-          downloadBlob(blob, "animation.glb");
-        } else {
-          const blob = new Blob([JSON.stringify(result)], { type: "application/json" });
-          downloadBlob(blob, "animation.gltf");
-        }
-      },
-      (error) => {
-        console.error("GLB export failed:", error);
-      },
-      { binary: true, animations: [clip], onlyVisible: false }
-    );
   };
 
   const handleExportHistoryJson = () => {
@@ -853,30 +701,6 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
                     style={{ marginLeft: '8px' }}
                   >
                     {isAssemblyPlaying ? '조립중...' : '조립 버튼'}
-                  </button>
-                  <button
-                    className="viewer-disassemble-btn"
-                    type="button"
-                    onClick={handleDisassemble}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onMouseDown={(event) => event.stopPropagation()}
-                    onTouchStart={(event) => event.stopPropagation()}
-                    disabled={isAssemblyPlaying}
-                    style={{ marginLeft: '8px' }}
-                  >
-                    {isAssemblyPlaying ? '분해중...' : '분해'}
-                  </button>
-                  <button
-                    className="viewer-test-btn"
-                    type="button"
-                    onClick={handleTestVirtualPivotAssembly}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onMouseDown={(event) => event.stopPropagation()}
-                    onTouchStart={(event) => event.stopPropagation()}
-                    disabled={isAssemblyPlaying}
-                    style={{ marginLeft: '8px' }}
-                  >
-                    {isAssemblyPlaying ? '테스트중...' : '가상 피벗 테스트'}
                   </button>
                 </>
               }

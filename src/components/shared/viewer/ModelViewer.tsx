@@ -3,15 +3,14 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils";
-import { removeClickedNode } from "../../../shared/utils/removeClickedNode";
-import { findNodeHeight } from "../../../shared/utils/findNodeHeight";
 import { animatorAgent } from "../../../services/AnimatorAgent";
 import { PartAssemblyService } from "../../../services/fridge/PartAssemblyService";
 import { getManualAssemblyManager } from "../../../services/fridge/ManualAssemblyManager";
 import { getClickPointMarker, resetClickPointMarker } from "../../../shared/utils/ClickPointMarker";
 import "./ModelViewer.css";
-
 import { DamperAssemblyService, getDamperAssemblyService } from '../../../services/fridge/DamperAssemblyService';
+// import { removeClickedNode } from "../../../shared/utils/removeClickedNode";
+// import { findNodeHeight } from "../../../shared/utils/findNodeHeight";
 
 
 const DEFAULT_MODEL = "/models/M-Next3.glb";

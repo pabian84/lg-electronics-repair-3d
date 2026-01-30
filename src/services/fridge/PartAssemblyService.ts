@@ -135,10 +135,6 @@ export class PartAssemblyService {
     }
 
 
-
-    /**
-     * PartAssemblyService.ts 추가/수정 부분
-     */
     // 1. 수동 조립 준비 (타임라인만 생성하고 일시정지)
     public prepareManualAssembly(
         sourceNodeName: string,
