@@ -996,8 +996,6 @@ export class NormalBasedHighlight {
             targetNode.traverse((child) => {
                 if (child instanceof THREE.Mesh && child.geometry) {
                     const geometry = child.geometry;
-                    const positions = geometry.attributes.position;
-                    const indices = geometry.index;
                     const worldMatrix = child.matrixWorld;
 
                     // EdgesGeometry를 사용하여 엣지 추출

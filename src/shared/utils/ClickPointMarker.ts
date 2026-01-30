@@ -39,17 +39,20 @@ export class ClickPointMarker {
         const markerId = `marker_${this.markerIdCounter++}`;
 
         // 파란색 구 생성
-        const geometry = new THREE.SphereGeometry(0.0005, 32, 32);
+        const geometry = new THREE.SphereGeometry(0.005, 32, 32);
         const material = new THREE.MeshBasicMaterial({
             color: 0x007bff,
             transparent: true,
             opacity: 0.8,
+            depthTest: false,      // 다른 객체에 가려지지 않게 설정
+            depthWrite: false,     // 투명 객체용
         });
         const marker = new THREE.Mesh(geometry, material);
 
         // 마커 위치 설정
         marker.position.copy(point);
         marker.name = markerId;
+        marker.renderOrder = 999;  // 렌더 순서 보장
 
         // 씬에 추가
         this.scene.add(marker);

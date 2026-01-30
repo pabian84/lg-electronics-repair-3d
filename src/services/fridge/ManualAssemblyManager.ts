@@ -11,7 +11,6 @@ import { getMetadataLoader } from '../../shared/utils/MetadataLoader';
 import { GrooveDetectionUtils } from '../../shared/utils/GrooveDetectionUtils';
 import { NormalBasedHighlight } from '../../shared/utils/NormalBasedHighlight';
 import { NormalBasedHoleVisualizer } from '../../components/highlight';
-import { StencilOutlineHighlight } from '../../shared/utils/StencilOutlineHighlight';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/Addons.js';
 
 /**
