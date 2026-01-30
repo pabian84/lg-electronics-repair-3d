@@ -34,7 +34,6 @@ export class NodeNameManager {
             await loader.loadNodeNames();
         }
         this.useMetadata = true;
-        console.log('[NodeNameManager] 메타데이터 모드 활성화');
     }
 
     /**
@@ -42,7 +41,6 @@ export class NodeNameManager {
      */
     public disableMetadataMode(): void {
         this.useMetadata = false;
-        console.log('[NodeNameManager] 메타데이터 모드 비활성화');
     }
 
     /**

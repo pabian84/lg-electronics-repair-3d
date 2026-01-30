@@ -27,8 +27,6 @@ export class DamperCoverAssemblyService {
         // 메타데이터 미리 로드
         const nodeNameManager = getNodeNameManager();
         nodeNameManager.enableMetadataMode();
-
-        console.log('[DamperCoverAssemblyService] 초기화 완료');
     }
 
     /**
@@ -39,10 +37,8 @@ export class DamperCoverAssemblyService {
         duration?: number;
         onComplete?: () => void;
     }): Promise<void> {
-        console.log('[DamperCoverAssemblyService] Starting Metadata-based Assembly...');
-
         if (!this.sceneRoot) {
-            console.error('[DamperCoverAssemblyService] Scene root not initialized.');
+            console.error('Scene root not initialized.');
             return;
         }
 
@@ -55,7 +51,7 @@ export class DamperCoverAssemblyService {
         ) as THREE.Mesh;
 
         if (!coverNode || !assemblyNode) {
-            console.error('[DamperCoverAssemblyService] Target nodes not found for assembly:', {
+            console.error('Target nodes not found for assembly:', {
                 coverName: nodeNameManager.getNodeName('fridge.leftDoor.damperCoverBody'),
                 assemblyName: nodeNameManager.getNodeName('fridge.leftDoor.damperAssembly')
             });
@@ -74,14 +70,14 @@ export class DamperCoverAssemblyService {
             try {
                 await metadataLoader.loadMetadata('/metadata/assembly-offsets.json');
             } catch (error) {
-                console.error('[DamperCoverAssemblyService] Metadata loading failed:', error);
-                throw new Error('[DamperCoverAssemblyService] Failed to load metadata');
+                console.error('Metadata loading failed:', error);
+                throw new Error('Failed to load metadata');
             }
         }
 
         const config = metadataLoader.getAssemblyConfig(assemblyKey);
         if (!config) {
-            throw new Error(`[DamperCoverAssemblyService] Config not found for key: ${assemblyKey}`);
+            throw new Error(`Config not found for key: ${assemblyKey}`);
         }
 
         const grooveParams = config.grooveDetection;
@@ -110,8 +106,6 @@ export class DamperCoverAssemblyService {
         holeWorldPositions = holeCenters.map(h => h.position);
 
         if (plugAnalyses.length > 0 && holeWorldPositions.length > 0) {
-            console.log(`[DamperCoverAssemblyService] Vertex Analysis success. Plug: ${plugAnalyses.length}, Hole: ${holeWorldPositions.length}`);
-
             const validPlugs = plugAnalyses.filter(p => p.filteredVerticesCount < 2000);
             const primaryPlug = validPlugs.length > 0
                 ? validPlugs.sort((a, b) => b.position.y - a.position.y)[0]
@@ -120,7 +114,7 @@ export class DamperCoverAssemblyService {
             plugWorldPos = primaryPlug.position;
 
             const currentPlugPos = plugWorldPos;
-            if (!currentPlugPos) throw new Error('[DamperCoverAssemblyService] Plug position is null');
+            if (!currentPlugPos) throw new Error('Plug position is null');
 
             const primaryHoleWorldPos = holeWorldPositions.sort((a, b) => {
                 const distA = a.distanceTo(currentPlugPos!);
@@ -132,7 +126,7 @@ export class DamperCoverAssemblyService {
             const currentCoverPos = coverNode.position.clone();
             targetPosition.addVectors(currentCoverPos, moveDelta);
         } else {
-            throw new Error('[DamperCoverAssemblyService] Vertex analysis failed. No plug or hole detected.');
+            throw new Error('Vertex analysis failed. No plug or hole detected.');
         }
 
         const currentCoverWorldPos = new THREE.Vector3();
@@ -165,7 +159,6 @@ export class DamperCoverAssemblyService {
                 ease: animationConfig?.easing || 'power2.inOut',
                 onComplete: () => {
                     this.assemblyPathVisualizer.clearDebugObjects();
-                    console.log('[DamperCoverAssemblyService] Completed using metadata');
                     if (options?.onComplete) options.onComplete();
                     resolve();
                 }

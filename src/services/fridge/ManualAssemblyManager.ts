@@ -28,8 +28,6 @@ export class ManualAssemblyManager {
         this.damperAssemblyService.initialize(sceneRoot);
         this.damperCoverAssemblyService.initialize(sceneRoot);
         this.grooveDetectionService.initialize(sceneRoot, cameraControls);
-
-        console.log('[ManualAssemblyManager] 초기화 완료');
     }
 
     public async disassembleDamperCover(options?: {
@@ -140,7 +138,6 @@ export class ManualAssemblyManager {
         this.holeCenterManager.dispose();
         this.partAssemblyService?.dispose();
         this.partAssemblyService = null;
-        console.log('[ManualAssemblyManager] 서비스 정리 완료');
     }
 }
 

@@ -14,7 +14,7 @@ export class AssemblyPathVisualizer {
      */
     public initialize(sceneRoot: THREE.Object3D): void {
         this.sceneRoot = sceneRoot;
-        console.log('[AssemblyPathVisualizer] 초기화 완료');
+
     }
 
     /**
@@ -207,7 +207,6 @@ export class AssemblyPathVisualizer {
     public dispose(): void {
         this.clearDebugObjects();
         this.sceneRoot = null;
-        console.log('[AssemblyPathVisualizer] 서비스 정리 완료');
     }
 }
 

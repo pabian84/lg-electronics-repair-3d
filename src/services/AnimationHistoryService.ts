@@ -27,10 +27,8 @@ export class AnimationHistoryService {
     private loadFromLocalStorage(): void {
         try {
             const saved = localStorage.getItem('animationHistory');
-            console.log('Loading animation history from localStorage:', saved ? saved.length + ' bytes' : 'empty');
             if (saved) {
                 const parsed = JSON.parse(saved);
-                console.log('Parsed history items:', parsed.length);
                 this.history = parsed.map((item: any) => ({
                     ...item,
                     timestamp: new Date(item.timestamp)
@@ -38,7 +36,6 @@ export class AnimationHistoryService {
                 this.nextId = this.history.length > 0
                     ? Math.max(...this.history.map(item => parseInt(item.id.replace('anim-', '')))) + 1
                     : 1;
-                console.log('Loaded history count:', this.history.length, 'Next ID:', this.nextId);
             } else {
                 console.log('No saved animation history found');
             }
@@ -51,14 +48,12 @@ export class AnimationHistoryService {
         try {
             const json = JSON.stringify(this.history);
             localStorage.setItem('animationHistory', json);
-            console.log('Saved animation history to localStorage:', json.length, 'bytes');
         } catch (error) {
             console.error('Failed to save animation history:', error);
         }
     }
 
     addAnimationHistory(command: AnimationCommand, message: string): AnimationHistoryItem {
-        console.log('[DEBUG-HISTORY] addAnimationHistory called:', command.door, command.action);
         const item: AnimationHistoryItem = {
             id: `anim-${this.nextId++}`,
             title: this.createTitle(command),
@@ -76,8 +71,6 @@ export class AnimationHistoryService {
 
         this.history.push(item);
         this.saveToLocalStorage();
-
-        console.log('Last items:', this.history.slice(-3).map(i => ({ id: i.id, title: i.title })));
 
         return item;
     }

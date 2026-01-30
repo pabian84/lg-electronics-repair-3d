@@ -239,13 +239,11 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
   useEffect(() => {
     // 새로고침 시 항상 히스토리를 clear (로컬 스토리지 자동 정리)
     animationHistoryService.clearHistory();
-    console.log('[HISTORY-LOAD] Cleared previous history on page load');
 
     const loadHistoryFromService = () => {
       try {
         const savedHistory = animationHistoryService.getAllHistory();
         if (savedHistory.length > 0) {
-          console.log('[HISTORY-LOAD] Loaded history from AnimationHistoryService:', savedHistory.length, 'items');
           // AnimationHistoryService의 인터페이스를 AnimationHistoryPanel 타입으로 변환
           const convertedItems: AnimationHistoryItem[] = savedHistory.map((item, index) => ({
             id: item.id,
@@ -268,14 +266,13 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
             if (newItems.length === 0) {
               return prev;
             }
-            console.log('[HISTORY-LOAD] Added', newItems.length, 'new items from service');
             return [...newItems, ...prev];
           });
         } else {
-          console.log('[HISTORY-LOAD] No saved history found in AnimationHistoryService');
+          // console.log('No saved history found in AnimationHistoryService');
         }
       } catch (error) {
-        console.error('[HISTORY-LOAD] Failed to load history from service:', error);
+        console.error('Failed to load history from service:', error);
       }
     };
 
@@ -297,7 +294,6 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
 
     animatorAgent.setOnActionCompleted(handleCompletion);
     animatorAgent.setAnimationHistoryService(animationHistoryService);
-    console.log('AnimationHistoryService initialized and set to AnimatorAgent');
 
     return () => {
       animatorAgent.setOnActionCompleted();
@@ -526,12 +522,10 @@ export default function ManualEditorPage({ modelPath, onBack }: ManualEditorPage
       const manager = getManualAssemblyManager();
       manager.initialize(sceneRoot);
       setManualAssemblyManager(manager);
-      console.log('[ManualEditor] ManualAssemblyManager 초기화 완료');
 
       return () => {
         manager.dispose();
         setManualAssemblyManager(null);
-        console.log('[ManualEditor] ManualAssemblyManager 정리 완료');
       };
     }
   }, [sceneRoot]);

@@ -331,9 +331,8 @@ export class NodeNameLoader {
             }
             this.nodeNames = await response.json();
             this.isLoaded = true;
-            console.log('[NodeNameLoader] 노드 이름 로드 완료');
         } catch (error) {
-            console.error('[NodeNameLoader] 노드 이름 로드 실패:', error);
+            console.error('노드 이름 로드 실패:', error);
             throw error;
         }
     }
@@ -345,7 +344,7 @@ export class NodeNameLoader {
      */
     public getNodeName(path: string): string | null {
         if (!this.isLoaded || !this.nodeNames) {
-            console.warn('[NodeNameLoader] 노드 이름이 로드되지 않았습니다.');
+            console.warn('노드 이름이 로드되지 않았습니다.');
             return null;
         }
 
@@ -354,7 +353,7 @@ export class NodeNameLoader {
 
         for (const key of keys) {
             if (current[key] === undefined) {
-                console.warn(`[NodeNameLoader] 노드 경로를 찾을 수 없습니다: ${path}`);
+                console.warn(`노드 경로를 찾을 수 없습니다: ${path}`);
                 return null;
             }
             current = current[key];
@@ -413,7 +412,6 @@ export class NodeNameManager {
             await loader.loadNodeNames();
         }
         this.useMetadata = true;
-        console.log('[NodeNameManager] 메타데이터 모드 활성화');
     }
 
     /**
@@ -421,7 +419,6 @@ export class NodeNameManager {
      */
     public disableMetadataMode(): void {
         this.useMetadata = false;
-        console.log('[NodeNameManager] 메타데이터 모드 비활성화');
     }
 
     /**

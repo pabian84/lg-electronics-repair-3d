@@ -28,8 +28,6 @@ export class DamperAssemblyService {
         // 메타데이터 미리 로드
         const nodeNameManager = getNodeNameManager();
         nodeNameManager.enableMetadataMode();
-
-        console.log('[DamperAssemblyService] 초기화 완료');
     }
 
     /**
@@ -62,7 +60,6 @@ export class DamperAssemblyService {
      */
     public debugPrintDamperStructure(): void {
         if (!this.sceneRoot) {
-            console.warn('[DamperAssemblyService] sceneRoot가 초기화되지 않았습니다.');
             return;
         }
 
@@ -74,10 +71,7 @@ export class DamperAssemblyService {
             nodeNameManager.getNodeName('fridge.leftDoor.damperCoverBody')!
         );
 
-        console.log('=== Damper Assembly 노드 구조 ===');
         this.printNodeNames(damperAssembly);
-
-        console.log('=== Damper Cover 노드 구조 ===');
         this.printNodeNames(damperCover);
     }
 }

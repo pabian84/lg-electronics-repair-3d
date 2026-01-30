@@ -29,7 +29,6 @@ export class HoleCenterManager {
      */
     public initialize(sceneRoot: THREE.Object3D): void {
         this.sceneRoot = sceneRoot;
-        console.log('[HoleCenterManager] 초기화 완료');
     }
 
     /**
@@ -49,7 +48,7 @@ export class HoleCenterManager {
         markerSize: number = 0.0005
     ): void {
         if (!this.sceneRoot) {
-            console.warn('[HoleCenterManager] sceneRoot가 초기화되지 않았습니다.');
+            console.warn('sceneRoot가 초기화되지 않았습니다.');
             return;
         }
 
@@ -90,8 +89,8 @@ export class HoleCenterManager {
             this.holeCenters.push(holeInfo);
         });
 
-        console.log(`[HoleCenterManager] ${analyses.length}개의 홈 중심점 마커 생성 완료`);
-        console.log('[HoleCenterManager] 저장된 홈 중심점 정보:', this.holeCenters.map(h => ({
+        console.log(`${analyses.length}개의 홈 중심점 마커 생성 완료`);
+        console.log('저장된 홈 중심점 정보:', this.holeCenters.map(h => ({
             id: h.id,
             position: `(${h.position.x.toFixed(4)}, ${h.position.y.toFixed(4)}, ${h.position.z.toFixed(4)})`,
             color: `0x${h.color.toString(16).padStart(6, '0')}`,
@@ -149,7 +148,7 @@ export class HoleCenterManager {
                 }
             }
             this.holeCenters.splice(index, 1);
-            console.log(`[HoleCenterManager] 홈 중심점 마커 제거: ${id}`);
+            console.log(`홈 중심점 마커 제거: ${id}`);
         }
     }
 
@@ -167,7 +166,6 @@ export class HoleCenterManager {
             }
         });
         this.holeCenters = [];
-        console.log('[HoleCenterManager] 모든 홈 중심점 정보 초기화 완료');
     }
 
     /**
@@ -194,7 +192,6 @@ export class HoleCenterManager {
         this.clearHoleCenters();
         this.clearDebugObjects();
         this.sceneRoot = null;
-        console.log('[HoleCenterManager] 서비스 정리 완료');
     }
 }
 

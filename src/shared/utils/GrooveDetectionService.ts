@@ -63,7 +63,7 @@ export class GrooveDetectionService {
             0.02
         );
 
-        console.log(`[GrooveDetectionService] ${holeAnalyses.length}개의 홈이 탐지되었습니다.`);
+        console.log(`${holeAnalyses.length}개의 홈이 탐지되었습니다.`);
 
         // 5. 탐지된 각 홈을 서로 다른 색상으로 하이라이트
         const highlightColors = [0x00ff00, 0x0088ff, 0xff00ff, 0xffff00, 0xff8800];
@@ -133,7 +133,6 @@ export class GrooveDetectionService {
         this.holeCenterManager.dispose();
         this.sceneRoot = null;
         this.cameraControls = null;
-        console.log('[GrooveDetectionService] 서비스 정리 완료');
     }
 }
 

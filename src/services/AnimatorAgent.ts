@@ -217,7 +217,6 @@ export class AnimatorAgent {
 
   // Set camera controls reference
   setCameraControls(cameraControls: any, sceneRoot?: any) {
-    console.log('setCameraControls!!!');
     this.cameraMovementService = new CameraMovementService(cameraControls, sceneRoot);
   }
 
@@ -860,19 +859,13 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
     }
 
     try {
-      // [DEBUG] Increment execution counter
       AnimatorAgent.executionCounter++;
       const totalExecutions = AnimatorAgent.executionCounter;
-      console.log(`=== [DEBUG] executeAnimationCommand called (total: ${totalExecutions}) ===`);
 
       // Check if commands are damper commands (need simultaneous execution)
       const commandsArray = Array.isArray(commands) ? commands : [commands];
       console.log('commandsArray>> ', JSON.stringify(commandsArray.map(c => ({ door: c.door, action: c.action, degrees: c.degrees }))));
       const isDamperCommands = areFridgeDamperCommands(commandsArray);
-
-      // [DEBUG] Add unique execution ID
-      const executionId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-
 
       if (isDamperCommands) {
         const locale = this.lastInputLocale;
@@ -881,9 +874,7 @@ REMEMBER: ONLY JSON, NO OTHER TEXT!`;
         let isCompleted = false;
 
         const handleCompletion = () => {
-          console.log('handleCompletion000');
           if (isCompleted) {
-            console.log('[DEBUG] handleCompletion already completed, skipping');
             return;
           }
 
