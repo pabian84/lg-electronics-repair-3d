@@ -11,6 +11,7 @@ import { getMetadataLoader } from '../../shared/utils/MetadataLoader';
 import { GrooveDetectionUtils } from '../../shared/utils/GrooveDetectionUtils';
 import { NormalBasedHighlight } from '../../shared/utils/NormalBasedHighlight';
 import { NormalBasedHoleVisualizer } from '../../components/highlight';
+import { getHoleCenterManager, type HoleCenterInfo } from '../../shared/utils/HoleCenterManager';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/Addons.js';
 
 /**
@@ -27,6 +28,7 @@ export class ManualAssemblyManager {
     private debugObjects: THREE.Object3D[] = [];
     private holeVisualizer: NormalBasedHoleVisualizer = new NormalBasedHoleVisualizer();
     private normalBasedHighlight: NormalBasedHighlight = new NormalBasedHighlight();
+    private holeCenterManager = getHoleCenterManager();
 
     public setCameraControls(cameraControls: any): void {
         this.cameraControls = cameraControls;
@@ -42,6 +44,7 @@ export class ManualAssemblyManager {
 
         this.holeVisualizer.initialize(sceneRoot);
         this.normalBasedHighlight.initialize(sceneRoot);
+        this.holeCenterManager.initialize(sceneRoot);
 
         console.log('[ManualAssemblyManager] 초기화 완료');
     }
@@ -129,9 +132,44 @@ export class ManualAssemblyManager {
         return this.isAssemblyPlaying;
     }
 
+    /**
+     * 저장된 홈 중심점 정보들을 반환합니다.
+     * @returns 홈 중심점 정보 배열
+     */
+    public getHoleCenters(): HoleCenterInfo[] {
+        return this.holeCenterManager.getHoleCenters();
+    }
+
+    /**
+     * ID로 홈 중심점 정보를 찾습니다.
+     * @param id 홈 중심점 ID
+     * @returns 홈 중심점 정보 또는 null
+     */
+    public getHoleCenterById(id: string): HoleCenterInfo | null {
+        return this.holeCenterManager.getHoleCenterById(id);
+    }
+
+    /**
+     * 인덱스로 홈 중심점 정보를 찾습니다.
+     * @param index 홈 중심점 인덱스
+     * @returns 홈 중심점 정보 또는 null
+     */
+    public getHoleCenterByIndex(index: number): HoleCenterInfo | null {
+        return this.holeCenterManager.getHoleCenterByIndex(index);
+    }
+
+    /**
+     * 저장된 홈 중심점의 개수를 반환합니다.
+     * @returns 홈 중심점 개수
+     */
+    public getHoleCentersCount(): number {
+        return this.holeCenterManager.getHoleCentersCount();
+    }
+
     public dispose(): void {
         this.holeVisualizer.dispose();
         this.normalBasedHighlight.dispose();
+        this.holeCenterManager.dispose();
         this.partAssemblyService?.dispose();
         this.partAssemblyService = null;
         this.sceneRoot = null;
@@ -201,43 +239,25 @@ export class ManualAssemblyManager {
             this.normalBasedHighlight.highlightBoundaryLoops(boundaryLoops, 0xff0080); // 테두리 표시
         }
         // 7. 탐지된 중심점에 마커 표시 (하이라이트 색상과 동기화)
-        /* if (holeAnalyses.length > 0) {
+        if (holeAnalyses.length > 0) {
             this.visualizeHoleCenters(holeAnalyses, highlightColors);
-        } */
+        }
     }
 
     /**
-     * 탐지된 홈 중심점들에 시각적 마커를 표시합니다.
+     * 탐지된 홈 중심점들에 시각적 마커를 표시하고 정보를 저장합니다.
      */
     private visualizeHoleCenters(
-        analyses: Array<{ position: THREE.Vector3 }>,
+        analyses: Array<{
+            position: THREE.Vector3;
+            rotationAxis?: THREE.Vector3;
+            insertionDirection?: THREE.Vector3;
+            filteredVerticesCount?: number;
+        }>,
         colors: number[]
     ): void {
-        if (!this.sceneRoot) return;
-
-        const markerSize = 0.002; // 마커 크기 (2mm)
-        const debugRenderOrder = 1000;
-
-        analyses.forEach((analysis, index) => {
-            const color = colors[index % colors.length];
-            const geometry = new THREE.SphereGeometry(markerSize, 16, 16);
-            const material = new THREE.MeshBasicMaterial({
-                color: color, // 하이라이트와 동일한 색상 사용
-                depthTest: false,
-                depthWrite: false,
-                transparent: true,
-                opacity: 0.8
-            });
-            const marker = new THREE.Mesh(geometry, material);
-            marker.position.copy(analysis.position);
-            marker.renderOrder = debugRenderOrder;
-            marker.name = `hole_marker_${index}`;
-
-            this.debugObjects.push(marker);
-            this.sceneRoot?.add(marker);
-        });
-
-        console.log(`[ManualAssemblyManager] ${analyses.length}개의 홈 중심점 마커 생성 완료`);
+        // HoleCenterManager를 사용하여 홈 중심점 시각화 및 저장
+        this.holeCenterManager.visualizeHoleCenters(analyses, colors);
     }
 
     private visualizeAssemblyPath(
@@ -397,6 +417,7 @@ export class ManualAssemblyManager {
     private clearDebugObjects(): void {
         this.holeVisualizer.clearVisualizations();
         this.normalBasedHighlight.clearHighlights();
+        this.holeCenterManager.clearDebugObjects();
 
         this.debugObjects.forEach((obj) => {
             this.sceneRoot?.remove(obj);
@@ -410,6 +431,8 @@ export class ManualAssemblyManager {
         });
         this.debugObjects = [];
     }
+
+
 
 
 
