@@ -172,40 +172,19 @@ export class DamperCoverAssemblyService {
 
             // 애니메이션 파라미터 준비
             const animationConfig = config?.animation;
-            const stages = animationConfig?.stages || [
-                { name: 'approach', progress: 0.7 },
-                { name: 'insert', progress: 1.0 }
-            ];
-
-            const approachStage = stages.find(s => s.name === 'approach') || { progress: 0.7 };
             const totalDuration = options?.duration || (animationConfig?.duration ? animationConfig.duration / 1000 : 1.5);
-            const approachDuration = totalDuration * approachStage.progress;
-            const insertDuration = totalDuration * (1.0 - approachStage.progress);
 
             // [디버깅] 애니메이션 파라미터 로그
             console.log('[디버깅] 애니메이션 파라미터:', {
                 totalDuration,
-                approachStageProgress: approachStage.progress,
-                approachDuration,
-                insertDuration,
-                stages
+                animationConfig
             });
-
-            // 접근 단계 목적지 (월드 좌표)
-            const approachWorldPos = new THREE.Vector3().lerpVectors(
-                currentCoverWorldPos,
-                targetWorldPos,
-                approachStage.progress
-            );
 
             // [디버깅] 좌표 정보 로그
             console.log('[디버깅] 좌표 정보:', {
                 currentCoverWorldPos: currentCoverWorldPos.toArray(),
                 targetWorldPos: targetWorldPos.toArray(),
-                approachWorldPos: approachWorldPos.toArray(),
-                distanceToTarget: currentCoverWorldPos.distanceTo(targetWorldPos),
-                distanceToApproach: currentCoverWorldPos.distanceTo(approachWorldPos),
-                approachToTargetDistance: approachWorldPos.distanceTo(targetWorldPos)
+                distanceToTarget: currentCoverWorldPos.distanceTo(targetWorldPos)
             });
 
             // 경로 시각화
@@ -235,7 +214,7 @@ export class DamperCoverAssemblyService {
             };
 
             return new Promise((resolve) => {
-                console.log('[디버깅] GSAP World-Coordinates Timeline 시작');
+                console.log('[디버깅] GSAP World-Coordinates Timeline 시작 (단일 단계 직선 이동)');
                 const tl = gsap.timeline({
                     onComplete: () => {
                         console.log('[디버깅] 애니메이션 완료');
@@ -249,81 +228,23 @@ export class DamperCoverAssemblyService {
                     }
                 });
 
-                // [디버깅] 타임라인 상태 확인
-                console.log('[디버깅] 타임라인 생성 완료:', {
-                    duration: tl.duration(),
-                    progress: tl.progress(),
-                    isActive: tl.isActive()
-                });
-
-                // 1단계: 접근
-                tl.to(animState, {
-                    x: approachWorldPos.x,
-                    y: approachWorldPos.y,
-                    z: approachWorldPos.z,
-                    duration: approachDuration,
-                    ease: animationConfig?.easing || 'power2.out',
-                    onStart: () => {
-                        console.log('[디버깅] 접근 단계 시작', {
-                            from: { x: animState.x, y: animState.y, z: animState.z },
-                            to: { x: approachWorldPos.x, y: approachWorldPos.y, z: approachWorldPos.z },
-                            duration: approachDuration
-                        });
-                    },
-                    onUpdate: () => {
-                        updatePosition();
-                        /* console.log('[디버깅] 접근 단계 진행 중:', {
-                            progress: tl.progress(),
-                            position: { x: animState.x, y: animState.y, z: animState.z }
-                        }); */
-                    },
-                    onComplete: () => {
-                        console.log('[디버깅] 접근 단계 완료', {
-                            finalPosition: { x: animState.x, y: animState.y, z: animState.z }
-                        });
-                    }
-                });
-
-                // [디버깅] 1단계 추가 후 타임라인 상태 확인
-                console.log('[디버깅] 1단계(접근) 추가 후 타임라인:', {
-                    duration: tl.duration(),
-                    childrenCount: tl.getChildren().length
-                });
-
-                // 2단계: 삽입
+                // 단일 단계: 시작점에서 최종 목적지까지 직선 이동
                 tl.to(animState, {
                     x: targetWorldPos.x,
                     y: targetWorldPos.y,
                     z: targetWorldPos.z,
-                    duration: insertDuration,
-                    ease: 'power1.inOut',
+                    duration: totalDuration,
+                    ease: animationConfig?.easing || 'power2.inOut',
                     onStart: () => {
-                        console.log('[디버깅] 삽입 단계 시작', {
+                        console.log('[디버깅] 직선 이동 시작', {
                             from: { x: animState.x, y: animState.y, z: animState.z },
                             to: { x: targetWorldPos.x, y: targetWorldPos.y, z: targetWorldPos.z },
-                            duration: insertDuration,
-                            insertDurationIsZero: insertDuration === 0
+                            duration: totalDuration
                         });
                     },
                     onUpdate: () => {
                         updatePosition();
-                        console.log('[디버깅] 삽입 단계 진행 중:', {
-                            progress: tl.progress(),
-                            position: { x: animState.x, y: animState.y, z: animState.z }
-                        });
-                    },
-                    onComplete: () => {
-                        console.log('[디버깅] 삽입 단계 완료', {
-                            finalPosition: { x: animState.x, y: animState.y, z: animState.z }
-                        });
                     }
-                });
-
-                // [디버깅] 2단계 추가 후 타임라인 상태 확인
-                console.log('[디버깅] 2단계(삽입) 추가 후 타임라인:', {
-                    totalDuration: tl.duration(),
-                    childrenCount: tl.getChildren().length,
-                    timelineActive: tl.isActive()
                 });
             });
         } else {
