@@ -64,7 +64,6 @@ export class DamperCoverAssemblyService {
             return;
         }
 
-        let targetPosition = new THREE.Vector3();
         let plugWorldPos: THREE.Vector3 | null = null;
         let holeWorldPositions: THREE.Vector3[] = [];
 
@@ -91,18 +90,12 @@ export class DamperCoverAssemblyService {
         // [Cover 분석] 결합 돌출부(Plug) 탐지
         const plugAnalyses = NormalBasedHighlight.calculatePlugByEdgeAnalysis(
             coverNode,
-            grooveParams.plugSearchDirection
-                ? new THREE.Vector3(
-                    grooveParams.plugSearchDirection.x,
-                    grooveParams.plugSearchDirection.y,
-                    grooveParams.plugSearchDirection.z
-                )
-                : new THREE.Vector3(0, -1, 0),
+            grooveParams.plugSearchDirection ?? new THREE.Vector3(0, 1, 0),
             grooveParams.edgeAngleThreshold ?? 60,
             grooveParams.plugClusteringDistance ?? 0.005
         );
 
-        // 탐지된 돌출부 필터링 (너무 가까운 포인트 중복 제거)
+        // 탐지된 돌출부 필터링 (너무 가까운 포인트 중복 제거) - position은 월드 좌표로 변환된 값
         this.detectedPlugs = this.filterDuplicatePlugs(
             plugAnalyses,
             (grooveParams.plugClusteringDistance ?? 0.005) * 1.5
@@ -114,10 +107,11 @@ export class DamperCoverAssemblyService {
             nodeNameManager.getNodeName('fridge.leftDoor.damperAssembly')!
         );
 
-        // 탐지된 홈 중심점 정보 가져오기
+        // 탐지된 홈 중심점 정보 가져오기  - position은 월드 좌표로 변환된 값
         const holeCenters = this.grooveDetectionService.getHoleCenters();
         holeWorldPositions = holeCenters.map(h => h.position);
 
+        const moveDelta = new THREE.Vector3();
         if (plugAnalyses.length > 0 && holeWorldPositions.length > 0) {
             // [개선] 다중 돌출부/홈 매칭: 모든 돌출부와 홈을 매칭하여 최적의 이동 벡터 계산
             const validPlugs = plugAnalyses.filter(p => p.filteredVerticesCount < 2000);
@@ -125,180 +119,236 @@ export class DamperCoverAssemblyService {
                 ? validPlugs.sort((a, b) => b.filteredVerticesCount - a.filteredVerticesCount)[0]
                 : plugAnalyses[0];
 
+            // 추출된 좌표는 이미 월드 좌표임
             plugWorldPos = primaryPlug.position;
 
-            const currentPlugPos = plugWorldPos;
-            if (!currentPlugPos) throw new Error('Plug position is null');
+            const currentPlugWorldPos = plugWorldPos;
+            if (!currentPlugWorldPos) throw new Error('Plug position is null');
 
-            // 가장 가까운 홈 찾기
+            // 가장 가까운 홈 찾기 (월드 좌표계 기준 비교)
             const primaryHoleWorldPos = holeWorldPositions.sort((a, b) => {
-                const distA = a.distanceTo(currentPlugPos!);
-                const distB = b.distanceTo(currentPlugPos!);
+                const distA = a.distanceTo(currentPlugWorldPos!);
+                const distB = b.distanceTo(currentPlugWorldPos!);
                 return distA - distB;
             })[0];
 
-            // 기본 이동 델타 계산
-            const moveDelta = new THREE.Vector3().subVectors(primaryHoleWorldPos, currentPlugPos!);
-            const currentCoverPos = coverNode.position.clone();
-            targetPosition.addVectors(currentCoverPos, moveDelta);
+            // 월드 좌표계에서의 이동 벡터 계산
+            moveDelta.subVectors(primaryHoleWorldPos, currentPlugWorldPos!);
 
-            // [개선] 메타데이터 기반 미세 조정 (Offset Mapping)
-            // Position Offset: insertion.offset 값을 최종 좌표에 추가하여 정밀 정렬
+            // 1. 최종 목표 월드 좌표 계산
+            const currentCoverWorldPos = new THREE.Vector3();
+            coverNode.getWorldPosition(currentCoverWorldPos);
+            const targetWorldPos = new THREE.Vector3().addVectors(currentCoverWorldPos, moveDelta);
+
+            // 2. 메타데이터 기반 미세 조정 (월드 좌표계에 적용)
             if (config.insertion && config.insertion.offset) {
                 const offset = new THREE.Vector3(
                     config.insertion.offset.x || 0,
                     config.insertion.offset.y || 0,
                     config.insertion.offset.z || 0
                 );
-                targetPosition.add(offset);
+                targetWorldPos.add(offset);
             }
 
-            // Insertion Depth: insertion.depth를 활용하여 홈 내부로 삽입되는 깊이 조절
             if (config.insertion && config.insertion.depth !== undefined) {
                 const insertionDir = primaryPlug.insertionDirection.clone().normalize();
-                const depthOffset = insertionDir.multiplyScalar(config.insertion.depth * 0.01); // depth를 적절한 스케일로 변환
-                targetPosition.add(depthOffset);
+                const depthOffset = insertionDir.multiplyScalar(config.insertion.depth * 0.01);
+                targetWorldPos.add(depthOffset);
             }
 
-            // [개선] 회전 보정: insertionDirection을 활용하여 정확한 삽입 각도 보정
+            // 회전 보정 (회전은 기존대로 유지)
             if (config.insertion && config.insertion.rotationOffset) {
                 const rotationOffset = new THREE.Vector3(
                     config.insertion.rotationOffset.x || 0,
                     config.insertion.rotationOffset.y || 0,
                     config.insertion.rotationOffset.z || 0
                 );
-                // 회전 보정은 coverNode의 회전에 적용
                 coverNode.rotation.x += rotationOffset.x;
                 coverNode.rotation.y += rotationOffset.y;
                 coverNode.rotation.z += rotationOffset.z;
             }
+
+            // 애니메이션 파라미터 준비
+            const animationConfig = config?.animation;
+            const stages = animationConfig?.stages || [
+                { name: 'approach', progress: 0.7 },
+                { name: 'insert', progress: 1.0 }
+            ];
+
+            const approachStage = stages.find(s => s.name === 'approach') || { progress: 0.7 };
+            const totalDuration = options?.duration || (animationConfig?.duration ? animationConfig.duration / 1000 : 1.5);
+            const approachDuration = totalDuration * approachStage.progress;
+            const insertDuration = totalDuration * (1.0 - approachStage.progress);
+
+            // [디버깅] 애니메이션 파라미터 로그
+            console.log('[디버깅] 애니메이션 파라미터:', {
+                totalDuration,
+                approachStageProgress: approachStage.progress,
+                approachDuration,
+                insertDuration,
+                stages
+            });
+
+            // 접근 단계 목적지 (월드 좌표)
+            const approachWorldPos = new THREE.Vector3().lerpVectors(
+                currentCoverWorldPos,
+                targetWorldPos,
+                approachStage.progress
+            );
+
+            // [디버깅] 좌표 정보 로그
+            console.log('[디버깅] 좌표 정보:', {
+                currentCoverWorldPos: currentCoverWorldPos.toArray(),
+                targetWorldPos: targetWorldPos.toArray(),
+                approachWorldPos: approachWorldPos.toArray(),
+                distanceToTarget: currentCoverWorldPos.distanceTo(targetWorldPos),
+                distanceToApproach: currentCoverWorldPos.distanceTo(approachWorldPos),
+                approachToTargetDistance: approachWorldPos.distanceTo(targetWorldPos)
+            });
+
+            // 경로 시각화
+            this.assemblyPathVisualizer.visualizeAssemblyPath(
+                currentCoverWorldPos,
+                targetWorldPos,
+                plugWorldPos || undefined,
+                holeWorldPositions.length > 0 ? holeWorldPositions : undefined
+            );
+
+            // 3. 월드 좌표 애니메이션 상태 객체
+            const animState = {
+                x: currentCoverWorldPos.x,
+                y: currentCoverWorldPos.y,
+                z: currentCoverWorldPos.z
+            };
+
+            const parentNode = coverNode.parent;
+            const updatePosition = () => {
+                const currentWorldPos = new THREE.Vector3(animState.x, animState.y, animState.z);
+                if (parentNode) {
+                    parentNode.worldToLocal(coverNode.position.copy(currentWorldPos));
+                } else {
+                    coverNode.position.copy(currentWorldPos);
+                }
+                coverNode.updateMatrixWorld(true);
+            };
+
+            return new Promise((resolve) => {
+                console.log('[디버깅] GSAP World-Coordinates Timeline 시작');
+                const tl = gsap.timeline({
+                    onComplete: () => {
+                        console.log('[디버깅] 애니메이션 완료');
+                        this.assemblyPathVisualizer.clearDebugObjects();
+                        if (options?.onComplete) options.onComplete();
+                        resolve();
+                    },
+                    onReverseComplete: () => {
+                        console.log('[디버깅] 애니메이션 역재생 완료');
+                        resolve();
+                    }
+                });
+
+                // [디버깅] 타임라인 상태 확인
+                console.log('[디버깅] 타임라인 생성 완료:', {
+                    duration: tl.duration(),
+                    progress: tl.progress(),
+                    isActive: tl.isActive()
+                });
+
+                // 1단계: 접근
+                tl.to(animState, {
+                    x: approachWorldPos.x,
+                    y: approachWorldPos.y,
+                    z: approachWorldPos.z,
+                    duration: approachDuration,
+                    ease: animationConfig?.easing || 'power2.out',
+                    onStart: () => {
+                        console.log('[디버깅] 접근 단계 시작', {
+                            from: { x: animState.x, y: animState.y, z: animState.z },
+                            to: { x: approachWorldPos.x, y: approachWorldPos.y, z: approachWorldPos.z },
+                            duration: approachDuration
+                        });
+                    },
+                    onUpdate: () => {
+                        updatePosition();
+                        console.log('[디버깅] 접근 단계 진행 중:', {
+                            progress: tl.progress(),
+                            position: { x: animState.x, y: animState.y, z: animState.z }
+                        });
+                    },
+                    onComplete: () => {
+                        console.log('[디버깅] 접근 단계 완료', {
+                            finalPosition: { x: animState.x, y: animState.y, z: animState.z }
+                        });
+                    }
+                });
+
+                // [디버깅] 1단계 추가 후 타임라인 상태 확인
+                console.log('[디버깅] 1단계(접근) 추가 후 타임라인:', {
+                    duration: tl.duration(),
+                    childrenCount: tl.children.length
+                });
+
+                // 2단계: 삽입
+                tl.to(animState, {
+                    x: targetWorldPos.x,
+                    y: targetWorldPos.y,
+                    z: targetWorldPos.z,
+                    duration: insertDuration,
+                    ease: 'power1.inOut',
+                    onStart: () => {
+                        console.log('[디버깅] 삽입 단계 시작', {
+                            from: { x: animState.x, y: animState.y, z: animState.z },
+                            to: { x: targetWorldPos.x, y: targetWorldPos.y, z: targetWorldPos.z },
+                            duration: insertDuration,
+                            insertDurationIsZero: insertDuration === 0
+                        });
+                    },
+                    onUpdate: () => {
+                        updatePosition();
+                        console.log('[디버깅] 삽입 단계 진행 중:', {
+                            progress: tl.progress(),
+                            position: { x: animState.x, y: animState.y, z: animState.z }
+                        });
+                    },
+                    onComplete: () => {
+                        console.log('[디버깅] 삽입 단계 완료', {
+                            finalPosition: { x: animState.x, y: animState.y, z: animState.z }
+                        });
+                    }
+                });
+
+                // [디버깅] 2단계 추가 후 타임라인 상태 확인
+                console.log('[디버깅] 2단계(삽입) 추가 후 타임라인:', {
+                    totalDuration: tl.duration(),
+                    childrenCount: tl.children.length,
+                    timelineActive: tl.isActive()
+                });
+            });
         } else {
             throw new Error('Vertex analysis failed. No plug or hole detected.');
         }
+    }
 
-        const currentCoverWorldPos = new THREE.Vector3();
-        coverNode.getWorldPosition(currentCoverWorldPos);
+    /**
+     * 서비스를 정리합니다.
+     */
+    public dispose(): void {
+        this.assemblyPathVisualizer.dispose();
+        this.grooveDetectionService.dispose();
+        this.sceneRoot = null;
+    }
 
-        const targetWorldPos = new THREE.Vector3();
-        const parentNode = coverNode.parent;
-        if (parentNode) {
-            (parentNode as THREE.Object3D).localToWorld(targetWorldPos.copy(targetPosition));
-        } else {
-            targetWorldPos.copy(targetPosition);
-        }
-
-        // 경로 시각화
-        this.assemblyPathVisualizer.visualizeAssemblyPath(
-            currentCoverWorldPos,
-            targetWorldPos,
-            plugWorldPos || undefined,
-            holeWorldPositions.length > 0 ? holeWorldPositions : undefined
-        );
-
-        const animationConfig = config?.animation;
-        const stages = animationConfig?.stages || [
-            { name: 'approach', progress: 0.7 },
-            { name: 'insert', progress: 1.0 }
-        ];
-
-        console.log('시네마틱 조립 애니메이션: 2단계 시퀀스 (접근 단계 + 삽입 단계)');
-        // [개선] 시네마틱 조립 애니메이션: 2단계 시퀀스 (접근 단계 + 삽입 단계)
-        const approachStage = stages.find(s => s.name === 'approach') || { progress: 0.7 };
-        const insertStage = stages.find(s => s.name === 'insert') || { progress: 1.0 };
-
-        const totalDuration = options?.duration || (animationConfig?.duration ? animationConfig.duration / 1000 : 1.5);
-        const approachDuration = totalDuration * approachStage.progress;
-        const insertDuration = totalDuration * (insertStage.progress - approachStage.progress);
-
-        console.log('애니메이션 설정:', {
-            totalDuration,
-            approachDuration,
-            insertDuration,
-            approachProgress: approachStage.progress,
-            insertProgress: insertStage.progress
-        });
-
-        // 접근 단계 목적지 (홈 입구 근처) - 로컬 좌표로 계산
-        const approachWorldPos = new THREE.Vector3().lerpVectors(
-            currentCoverWorldPos,
-            targetWorldPos,
-            approachStage.progress
-        );
-        const approachTarget = new THREE.Vector3();
-        if (parentNode) {
-            (parentNode as THREE.Object3D).worldToLocal(approachTarget.copy(approachWorldPos));
-        } else {
-            approachTarget.copy(approachWorldPos);
-        }
-
-        console.log('좌표 정보:', {
-            currentCoverPos: coverNode.position,
-            approachTarget,
-            targetPosition,
-            currentCoverWorldPos,
-            targetWorldPos
-        });
-
-        return new Promise((resolve) => {
-            console.log('GSAP Timeline 생성 시작');
-            // GSAP Timeline을 사용하여 2단계 시퀀스 구현
-            const timeline = gsap.timeline({
-                paused: false, // 명시적으로 실행 상태 지정
-                onComplete: () => {
-                    console.log('애니메이션 완료');
-                    this.assemblyPathVisualizer.clearDebugObjects();
-                    if (options?.onComplete) options.onComplete();
-                    resolve();
-                },
-                onReverseComplete: () => {
-                    console.log('애니메이션 역방향 완료');
-                    this.assemblyPathVisualizer.clearDebugObjects();
-                    if (options?.onComplete) options.onComplete();
-                    resolve();
-                }
-            });
-
-            console.log('1단계: 접근 단계 애니메이션 추가');
-            // 1단계: 접근 단계 (홈 입구 근처까지 부드럽게 이동)
-            timeline.to(coverNode.position, {
-                x: approachTarget.x,
-                y: approachTarget.y,
-                z: approachTarget.z,
-                duration: approachDuration,
-                ease: animationConfig?.easing || 'power2.out',
-                onStart: () => {
-                    console.log('접근 단계 시작');
-                },
-                onUpdate: () => {
-                    // Three.js 렌더링을 위해 업데이트 필요 시
-                    if (coverNode.parent) {
-                        coverNode.parent.updateMatrixWorld(true);
-                    }
-                }
-            });
-
-            console.log('2단계: 삽입 단계 애니메이션 추가');
-            // 2단계: 삽입 단계 (홈 내부로 정밀하게 결합)
-            timeline.to(coverNode.position, {
-                x: targetPosition.x,
-                y: targetPosition.y,
-                z: targetPosition.z,
-                duration: insertDuration,
-                ease: 'power1.inOut', // 삽입 시 더 부드러운 이징
-                onStart: () => {
-                    console.log('삽입 단계 시작');
-                },
-                onUpdate: () => {
-                    // Three.js 렌더링을 위해 업데이트 필요 시
-                    if (coverNode.parent) {
-                        coverNode.parent.updateMatrixWorld(true);
-                    }
-                }
-            });
-
-            console.log('Timeline 생성 완료, 재생 시작');
-            timeline.play(); // 명시적으로 재생 시작
-        });
+    /**
+     * 탐지된 돌출부(Plug) 정보를 반환합니다.
+     * @returns 탐지된 돌출부 정보 배열
+     */
+    public getDetectedPlugs(): Array<{
+        position: THREE.Vector3;
+        rotationAxis: THREE.Vector3;
+        insertionDirection: THREE.Vector3;
+        filteredVerticesCount: number;
+    }> {
+        return this.detectedPlugs;
     }
 
     /**
@@ -351,28 +401,6 @@ export class DamperCoverAssemblyService {
         });
 
         return uniquePlugs;
-    }
-
-    /**
-     * 서비스를 정리합니다.
-     */
-    public dispose(): void {
-        this.assemblyPathVisualizer.dispose();
-        this.grooveDetectionService.dispose();
-        this.sceneRoot = null;
-    }
-
-    /**
-     * 탐지된 돌출부(Plug) 정보를 반환합니다.
-     * @returns 탐지된 돌출부 정보 배열
-     */
-    public getDetectedPlugs(): Array<{
-        position: THREE.Vector3;
-        rotationAxis: THREE.Vector3;
-        insertionDirection: THREE.Vector3;
-        filteredVerticesCount: number;
-    }> {
-        return this.detectedPlugs;
     }
 }
 

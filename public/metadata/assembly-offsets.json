@@ -17,7 +17,7 @@
                     "y": -1,
                     "z": 0
                 },
-                "edgeAngleThreshold": 60,
+                "edgeAngleThreshold": 80,
                 "plugClusteringDistance": 0.015,
                 "holeClusteringDistance": 0.015,
                 "maxVerticesThreshold": 10000
