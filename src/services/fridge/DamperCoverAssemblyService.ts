@@ -118,7 +118,7 @@ export class DamperCoverAssemblyService {
 
 
         // 탐지된 좌표 시각화
-        this.visualizeDetectedCoordinates();
+        // this.visualizeDetectedCoordinates();
 
         // [추가] 돌출부 좌표부터 가장 가까운 홈 좌표까지 coverNode 선형 이동
         if (this.detectedPlugs.length > 0 && this.detectedHoles.length > 0) {
@@ -142,6 +142,16 @@ export class DamperCoverAssemblyService {
 
             // 월드 이동 벡터 계산 (플러그가 홈 위치로 가야 함)
             const worldMoveVector = new THREE.Vector3().subVectors(bestHole.position, bestPlug.position);
+
+            // [수정] 선형 이동 거리를 줄임 (오프셋 추가)
+            // 현재 위치에서 목표 위치로 향하는 직선 경로상에서 일정 거리만큼 덜 이동하게 함
+            const offsetDistance = 0.0006; // 1cm 덜 이동 (원하는 값으로 조정 가능)
+            const totalDistance = worldMoveVector.length();
+            const reducedDistance = Math.max(0, totalDistance - offsetDistance);
+
+            if (totalDistance > 0) {
+                worldMoveVector.normalize().multiplyScalar(reducedDistance);
+            }
 
             // 목표 월드 좌표 계산 (현재 커버 위치 + 이동 벡터)
             const currentWorldPos = new THREE.Vector3();
