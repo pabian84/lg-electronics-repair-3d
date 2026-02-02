@@ -119,7 +119,7 @@ export class AssemblyPathVisualizer {
             const root = this.sceneRoot;
 
             holePositions.forEach((hPos) => {
-                console.log('hPos>> ', hPos);
+                // console.log('hPos>> ', hPos);
                 const holeGeometry = new THREE.SphereGeometry(ellipse, 16, 16);
                 const holeMaterial = new THREE.MeshBasicMaterial({
                     color: 0xff8000,
@@ -183,6 +183,40 @@ export class AssemblyPathVisualizer {
                 : (holePosition ? `(${holePosition.x.toFixed(3)}, ${holePosition.y.toFixed(3)}, ${holePosition.z.toFixed(3)})` : '없음'),
             이동거리: direction.length().toFixed(4)
         });
+    }
+
+    /**
+     * 탐지된 돌출부(Plug)와 홈(Hole) 좌표를 시각화합니다.
+     * @param plugs 탐지된 돌출부 정보 배열
+     * @param holes 탐지된 홈 정보 배열
+     */
+    public visualizeDetectedCoordinates(
+        plugs: Array<{ position: THREE.Vector3 }>,
+        holes: Array<{ position: THREE.Vector3 }>
+    ): void {
+        if (!this.sceneRoot) return;
+
+        const plugPositions = plugs.map(plug => plug.position);
+        const holePositions = holes.map(hole => hole.position);
+
+        // 플러그와 홈이 모두 탐지된 경우에만 시각화
+        if (plugPositions.length > 0 && holePositions.length > 0) {
+            // 첫 번째 플러그와 홈을 기준으로 시각화
+            const startPos = plugPositions[0];
+            const endPos = holePositions[0];
+
+            this.visualizeAssemblyPath(
+                startPos,
+                endPos,
+                plugPositions[0],
+                holePositions
+            );
+
+            console.log('[시각화] 탐지된 좌표 정보:', {
+                detectedPlugs: plugPositions.map(p => `(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)})`),
+                detectedHoles: holePositions.map(h => `(${h.x.toFixed(3)}, ${h.y.toFixed(3)}, ${h.z.toFixed(3)})`)
+            });
+        }
     }
 
     /**

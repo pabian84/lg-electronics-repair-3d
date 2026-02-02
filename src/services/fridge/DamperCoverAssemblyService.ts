@@ -70,9 +70,6 @@ export class DamperCoverAssemblyService {
             return;
         }
 
-        let plugWorldPos: THREE.Vector3 | null = null;
-        let holeWorldPositions: THREE.Vector3[] = [];
-
         // 메타데이터 로드
         const metadataLoader = getMetadataLoader();
         const assemblyKey = 'damper_cover_assembly';
@@ -115,12 +112,10 @@ export class DamperCoverAssemblyService {
         console.log('this.detectedHoles>>> ', this.detectedHoles);
 
 
+        // 탐지된 좌표 시각화 (AssemblyPathVisualizer 사용)
+        // this.assemblyPathVisualizer.visualizeDetectedCoordinates(this.detectedPlugs, this.detectedHoles);
 
-
-        // 탐지된 좌표 시각화
-        // this.visualizeDetectedCoordinates();
-
-        // [추가] 돌출부 좌표부터 가장 가까운 홈 좌표까지 coverNode 선형 이동
+        // 돌출부 좌표부터 가장 가까운 홈 좌표까지 coverNode 선형 이동
         if (this.detectedPlugs.length > 0 && this.detectedHoles.length > 0) {
             let minDistance = Infinity;
             let bestPlug = this.detectedPlugs[0];
@@ -143,9 +138,9 @@ export class DamperCoverAssemblyService {
             // 월드 이동 벡터 계산 (플러그가 홈 위치로 가야 함)
             const worldMoveVector = new THREE.Vector3().subVectors(bestHole.position, bestPlug.position);
 
-            // [수정] 선형 이동 거리를 줄임 (오프셋 추가)
+            // 선형 이동 거리를 줄임 (오프셋 추가)
             // 현재 위치에서 목표 위치로 향하는 직선 경로상에서 일정 거리만큼 덜 이동하게 함
-            const offsetDistance = 0.0006; // 1cm 덜 이동 (원하는 값으로 조정 가능)
+            const offsetDistance = 0.0005;
             const totalDistance = worldMoveVector.length();
             const reducedDistance = Math.max(0, totalDistance - offsetDistance);
 
@@ -172,39 +167,11 @@ export class DamperCoverAssemblyService {
                     duration: options?.duration ? options.duration / 1000 : 1.5,
                     ease: 'power2.inOut',
                     onComplete: () => {
-                        console.log('[조립] 커버 이동 완료');
+                        console.log('커버 노드 이동 완료');
                         if (options?.onComplete) options.onComplete();
                         resolve();
                     }
                 });
-            });
-        }
-    }
-
-    /**
-     * 탐지된 돌출부와 홈 좌표를 시각화합니다.
-     */
-    private visualizeDetectedCoordinates(): void {
-        // detectedPlugs와 detectedHoles 좌표 시각화
-        const plugPositions = this.detectedPlugs.map(plug => plug.position);
-        const holePositions = this.detectedHoles.map(hole => hole.position);
-
-        // 플러그와 홈이 모두 탐지된 경우에만 시각화
-        if (plugPositions.length > 0 && holePositions.length > 0) {
-            // 첫 번째 플러그와 홈을 기준으로 시각화
-            const startPos = plugPositions[0];
-            const endPos = holePositions[0];
-
-            this.assemblyPathVisualizer.visualizeAssemblyPath(
-                startPos,
-                endPos,
-                plugPositions[0],
-                holePositions
-            );
-
-            console.log('[시각화] 탐지된 좌표 정보:', {
-                detectedPlugs: plugPositions.map(p => `(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)})`),
-                detectedHoles: holePositions.map(h => `(${h.x.toFixed(3)}, ${h.y.toFixed(3)}, ${h.z.toFixed(3)})`)
             });
         }
     }
