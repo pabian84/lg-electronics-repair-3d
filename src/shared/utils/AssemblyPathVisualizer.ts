@@ -39,7 +39,7 @@ export class AssemblyPathVisualizer {
         // 시작점 마커
         const startGeometry = new THREE.SphereGeometry(ellipse, 16, 16);
         const startMaterial = new THREE.MeshBasicMaterial({
-            color: 0xff0000,
+            color: 0x000000,
             depthTest: false,
             depthWrite: false,
             transparent: true
@@ -53,7 +53,7 @@ export class AssemblyPathVisualizer {
         // 종료점 마커
         const endGeometry = new THREE.SphereGeometry(ellipse, 16, 16);
         const endMaterial = new THREE.MeshBasicMaterial({
-            color: 0x00ff00,
+            color: 0x000000,
             depthTest: false,
             depthWrite: false,
             transparent: true
@@ -68,7 +68,7 @@ export class AssemblyPathVisualizer {
         const pathPoints = [startPosition.clone(), endPosition.clone()];
         const pathGeometry = new THREE.BufferGeometry().setFromPoints(pathPoints);
         const pathMaterial = new THREE.LineDashedMaterial({
-            color: 0xffff00,
+            color: 0x000000,
             dashSize: 0.05,
             gapSize: 0.02,
             linewidth: 2,
@@ -86,7 +86,7 @@ export class AssemblyPathVisualizer {
         if (plugPosition) {
             const plugGeometry = new THREE.SphereGeometry(ellipse, 16, 16);
             const plugMaterial = new THREE.MeshBasicMaterial({
-                color: 0x0088ff,
+                color: 0xff00ff,
                 depthTest: false,
                 depthWrite: false,
                 transparent: true
@@ -101,7 +101,7 @@ export class AssemblyPathVisualizer {
             const plugToStartLine = new THREE.Line(
                 plugToStart,
                 new THREE.LineBasicMaterial({
-                    color: 0x0088ff,
+                    color: 0x000000,
                     transparent: true,
                     opacity: 0.5,
                     depthTest: false,
@@ -119,9 +119,10 @@ export class AssemblyPathVisualizer {
             const root = this.sceneRoot;
 
             holePositions.forEach((hPos) => {
+                console.log('hPos>> ', hPos);
                 const holeGeometry = new THREE.SphereGeometry(ellipse, 16, 16);
                 const holeMaterial = new THREE.MeshBasicMaterial({
-                    color: 0xff00ff,
+                    color: 0xff8000,
                     depthTest: false,
                     depthWrite: false,
                     transparent: true
@@ -136,7 +137,7 @@ export class AssemblyPathVisualizer {
                 const holeToEndLine = new THREE.Line(
                     holeToEnd,
                     new THREE.LineBasicMaterial({
-                        color: 0xff00ff,
+                        color: 0x000000,
                         transparent: true,
                         opacity: 0.5,
                         depthTest: false,
@@ -156,7 +157,7 @@ export class AssemblyPathVisualizer {
                 direction.clone().normalize(),
                 startPosition,
                 direction.length(),
-                0xffff00
+                0x000000
             );
 
             arrowHelper.renderOrder = debugRenderOrder;

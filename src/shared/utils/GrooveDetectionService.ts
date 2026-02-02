@@ -82,9 +82,9 @@ export class GrooveDetectionService {
         }
 
         // 7. 탐지된 중심점에 마커 표시 (하이라이트 색상과 동기화)
-        if (holeAnalyses.length > 0) {
+        /* if (holeAnalyses.length > 0) {
             this.holeCenterManager.visualizeHoleCenters(holeAnalyses, highlightColors);
-        }
+        } */
 
         return holeAnalyses;
     }

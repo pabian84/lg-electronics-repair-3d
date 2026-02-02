@@ -117,146 +117,85 @@ export class DamperCoverAssemblyService {
 
 
 
-        // 탐지된 홈 중심점 정보 가져오기  - position은 월드 좌표로 변환된 값
-        const holeCenters = this.grooveDetectionService.getHoleCenters();
-        holeWorldPositions = holeCenters.map(h => h.position);
+        // 탐지된 좌표 시각화
+        this.visualizeDetectedCoordinates();
 
-        if (this.detectedPlugs.length > 0 && holeWorldPositions.length > 0) {
-            // 돌출부와 홈 매칭: 이미 필터링된 돌출부 정보 사용
-            const primaryPlug = this.detectedPlugs.sort((a, b) => b.filteredVerticesCount - a.filteredVerticesCount)[0];
-            const currentPlugWorldPos = primaryPlug.position;
+        // [추가] 돌출부 좌표부터 가장 가까운 홈 좌표까지 coverNode 선형 이동
+        if (this.detectedPlugs.length > 0 && this.detectedHoles.length > 0) {
+            let minDistance = Infinity;
+            let bestPlug = this.detectedPlugs[0];
+            let bestHole = this.detectedHoles[0];
 
-            // 가장 가까운 홈 찾기 (월드 좌표계 기준 비교)
-            const primaryHoleWorldPos = holeWorldPositions.sort((a, b) => {
-                const distA = a.distanceTo(currentPlugWorldPos);
-                const distB = b.distanceTo(currentPlugWorldPos);
-                return distA - distB;
-            })[0];
-
-            // primaryHoleWorldPos와 일치하는 홈 정보 찾기
-            const primaryHoleInfo = this.detectedHoles.find(hole =>
-                new THREE.Vector3(hole.position.x, hole.position.y, hole.position.z)
-                    .distanceTo(primaryHoleWorldPos) < 0.001
-            );
-
-            // 돌출부에서 홈으로의 이동 벡터 계산
-            const moveVector = new THREE.Vector3().subVectors(primaryHoleWorldPos, currentPlugWorldPos);
-
-            // 커버 노드의 현재 월드 좌표
-            const currentCoverWorldPos = new THREE.Vector3();
-            coverNode.getWorldPosition(currentCoverWorldPos);
-
-            // 목표 월드 좌표 = 현재 커버 좌표 + 이동 벡터
-            const targetWorldPos = new THREE.Vector3().addVectors(currentCoverWorldPos, moveVector);
-
-            // [개선] 홈의 insertionDirection을 사용하여 depth 오프셋 계산
-            if (config.insertion && config.insertion.depth !== undefined) {
-                // 홈의 insertionDirection이 있는 경우 우선 사용
-                const insertionDir = primaryHoleInfo?.insertionDirection
-                    ? new THREE.Vector3(
-                        primaryHoleInfo.insertionDirection.x,
-                        primaryHoleInfo.insertionDirection.y,
-                        primaryHoleInfo.insertionDirection.z
-                    ).normalize()
-                    : primaryPlug.insertionDirection.clone().normalize();
-
-                const depthOffset = insertionDir.multiplyScalar(config.insertion.depth * 0.01);
-                targetWorldPos.add(depthOffset);
-            }
-
-            // 회전 보정 (회전은 기존대로 유지)
-            if (config.insertion && config.insertion.rotationOffset) {
-                const rotationOffset = new THREE.Vector3(
-                    config.insertion.rotationOffset.x || 0,
-                    config.insertion.rotationOffset.y || 0,
-                    config.insertion.rotationOffset.z || 0
-                );
-                coverNode.rotation.x += rotationOffset.x;
-                coverNode.rotation.y += rotationOffset.y;
-                coverNode.rotation.z += rotationOffset.z;
-            }
-
-            // 애니메이션 파라미터 준비
-            const animationConfig = config?.animation;
-            const totalDuration = options?.duration || (animationConfig?.duration ? animationConfig.duration / 1000 : 1.5);
-
-            // [디버깅] 애니메이션 파라미터 로그
-            console.log('[디버깅] 애니메이션 파라미터:', {
-                totalDuration,
-                animationConfig
-            });
-
-            // [디버깅] 좌표 정보 로그
-            console.log('[디버깅] 좌표 정보:', {
-                currentCoverWorldPos: currentCoverWorldPos.toArray(),
-                targetWorldPos: targetWorldPos.toArray(),
-                distanceToTarget: currentCoverWorldPos.distanceTo(targetWorldPos)
-            });
-
-            /* // 경로 시각화
-            this.assemblyPathVisualizer.visualizeAssemblyPath(
-                currentCoverWorldPos,  // 시작점
-                targetWorldPos,  // 종료점
-                plugWorldPos || undefined,  // 돌출부
-                holeWorldPositions.length > 0 ? holeWorldPositions : undefined  // 홈
-            ); */
-
-            // 3. 월드 좌표 애니메이션 상태 객체
-            const animState = {
-                x: currentCoverWorldPos.x,
-                y: currentCoverWorldPos.y,
-                z: currentCoverWorldPos.z
-            };
-
-            const parentNode = coverNode.parent;
-            const updatePosition = () => {
-                const currentWorldPos = new THREE.Vector3(animState.x, animState.y, animState.z);
-                if (parentNode) {
-                    // 월드 좌표를 복제한 후 로컬 좌표로 변환
-                    const localPos = parentNode.worldToLocal(currentWorldPos.clone());
-                    coverNode.position.copy(localPos);
-                } else {
-                    coverNode.position.copy(currentWorldPos);
+            // 모든 플러그와 홈 사이의 최단 거리 쌍 찾기
+            for (const plug of this.detectedPlugs) {
+                for (const hole of this.detectedHoles) {
+                    const dist = plug.position.distanceTo(hole.position);
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        bestPlug = plug;
+                        bestHole = hole;
+                    }
                 }
-                coverNode.updateMatrixWorld(true);
-            };
+            }
 
-            return new Promise((resolve) => {
-                console.log('[디버깅] GSAP World-Coordinates Timeline 시작 (단일 단계 직선 이동)');
-                const tl = gsap.timeline({
+            console.log(`[조립] 최단 거리 쌍 발견: 거리 ${minDistance.toFixed(5)}`, { bestPlug, bestHole });
+
+            // 월드 이동 벡터 계산 (플러그가 홈 위치로 가야 함)
+            const worldMoveVector = new THREE.Vector3().subVectors(bestHole.position, bestPlug.position);
+
+            // 목표 월드 좌표 계산 (현재 커버 위치 + 이동 벡터)
+            const currentWorldPos = new THREE.Vector3();
+            coverNode.getWorldPosition(currentWorldPos);
+            const targetWorldPos = currentWorldPos.clone().add(worldMoveVector);
+
+            // 부모 좌표계로 변환 (로컬 position 업데이트를 위해)
+            const targetLocalPos = coverNode.parent
+                ? coverNode.parent.worldToLocal(targetWorldPos.clone())
+                : targetWorldPos;
+
+            // GSAP 선형 이동 애니메이션
+            await new Promise<void>((resolve) => {
+                gsap.to(coverNode.position, {
+                    x: targetLocalPos.x,
+                    y: targetLocalPos.y,
+                    z: targetLocalPos.z,
+                    duration: options?.duration ? options.duration / 1000 : 1.5,
+                    ease: 'power2.inOut',
                     onComplete: () => {
-                        console.log('[디버깅] 애니메이션 완료');
-                        this.assemblyPathVisualizer.clearDebugObjects();
+                        console.log('[조립] 커버 이동 완료');
                         if (options?.onComplete) options.onComplete();
                         resolve();
-                    },
-                    onReverseComplete: () => {
-                        console.log('[디버깅] 애니메이션 역재생 완료');
-                        resolve();
-                    }
-                });
-
-                // 단일 단계: 시작점에서 최종 목적지까지 직선 이동
-                tl.to(animState, {
-                    x: targetWorldPos.x,
-                    y: targetWorldPos.y,
-                    z: targetWorldPos.z,
-                    duration: totalDuration,
-                    ease: animationConfig?.easing || 'power2.inOut',
-                    onStart: () => {
-                        console.log('[디버깅] 직선 이동 시작', {
-                            from: { x: animState.x, y: animState.y, z: animState.z },
-                            to: { x: targetWorldPos.x, y: targetWorldPos.y, z: targetWorldPos.z },
-                            duration: totalDuration
-                        });
-                    },
-                    onUpdate: () => {
-                        updatePosition();
                     }
                 });
             });
-        } else {
-            throw new Error('Vertex analysis failed. No plug or hole detected.');
+        }
+    }
+
+    /**
+     * 탐지된 돌출부와 홈 좌표를 시각화합니다.
+     */
+    private visualizeDetectedCoordinates(): void {
+        // detectedPlugs와 detectedHoles 좌표 시각화
+        const plugPositions = this.detectedPlugs.map(plug => plug.position);
+        const holePositions = this.detectedHoles.map(hole => hole.position);
+
+        // 플러그와 홈이 모두 탐지된 경우에만 시각화
+        if (plugPositions.length > 0 && holePositions.length > 0) {
+            // 첫 번째 플러그와 홈을 기준으로 시각화
+            const startPos = plugPositions[0];
+            const endPos = holePositions[0];
+
+            this.assemblyPathVisualizer.visualizeAssemblyPath(
+                startPos,
+                endPos,
+                plugPositions[0],
+                holePositions
+            );
+
+            console.log('[시각화] 탐지된 좌표 정보:', {
+                detectedPlugs: plugPositions.map(p => `(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)})`),
+                detectedHoles: holePositions.map(h => `(${h.x.toFixed(3)}, ${h.y.toFixed(3)}, ${h.z.toFixed(3)})`)
+            });
         }
     }
 
